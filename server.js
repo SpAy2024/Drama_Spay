@@ -1,4 +1,4 @@
-// server.js - VERSIÓN COMPLETA CON SCRAPING DE TODOS LOS EPISODIOS
+// server.js - VERSIÓN CON FIREBASE
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -9,10 +9,14 @@ const cheerio = require('cheerio');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuración de GitHub (variables de entorno)
+// Configuración de GitHub
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_REPO = process.env.GITHUB_REPO || 'SpAy2024/Drama_Spay';
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
+
+// Configuración de Firebase
+const FIREBASE_URL = process.env.FIREBASE_URL || 'https://cartelera-37eb8-default-rtdb.firebaseio.com/';
+const FIREBASE_SECRET = process.env.FIREBASE_SECRET || '';
 
 // Middleware
 app.use(cors());
@@ -28,7 +32,7 @@ const CONFIG = {
     baseUrl: 'https://edge.narto-drama.com',
     catalogoUrl: 'https://edge.narto-drama.com/?lang=es-ES&tab-provider=bilitv',
     pausaEntrePeticiones: 2000,
-    maxPaginas: 3,
+    maxPaginas: 4,
     archivoSalida: 'dramas-completos-paginado.json'
 };
 
@@ -56,6 +60,98 @@ function agregarLog(mensaje, tipo = 'info') {
         estadoScraping.logs = estadoScraping.logs.slice(0, 100);
     }
     console.log(`[${tipo}] ${mensaje}`);
+}
+
+// ============ FUNCIONES DE FIREBASE ============
+
+async function guardarEnFirebase(datos, ruta = 'dramas') {
+    if (!FIREBASE_URL) {
+        console.error('❌ FIREBASE_URL no configurado');
+        return { success: false, error: 'Firebase URL no configurada' };
+    }
+
+    try {
+        const url = `${FIREBASE_URL}/${ruta}.json`;
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(datos)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error al guardar en Firebase: ${response.status}`);
+        }
+
+        console.log(`✅ Datos guardados en Firebase: ${FIREBASE_URL}/${ruta}`);
+        return { success: true, url: `${FIREBASE_URL}/${ruta}` };
+    } catch (error) {
+        console.error('❌ Error al guardar en Firebase:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+// ============ FUNCIONES DE GITHUB ============
+
+async function guardarEnGitHub(contenido, nombreArchivo = 'dramas-completos-paginado.json', mensaje = '📊 Actualización automática de datos') {
+    if (!GITHUB_TOKEN) {
+        console.error('❌ GITHUB_TOKEN no configurado');
+        return { success: false, error: 'Token no configurado' };
+    }
+
+    try {
+        const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/${nombreArchivo}`;
+        const contenidoBase64 = Buffer.from(JSON.stringify(contenido, null, 2)).toString('base64');
+        
+        let sha = null;
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `token ${GITHUB_TOKEN}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                sha = data.sha;
+            }
+        } catch (e) {
+            console.log('ℹ️ Archivo no existe en GitHub, se creará uno nuevo');
+        }
+
+        const body = {
+            message: mensaje,
+            content: contenidoBase64,
+            branch: GITHUB_BRANCH
+        };
+        if (sha) {
+            body.sha = sha;
+        }
+
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `token ${GITHUB_TOKEN}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/vnd.github.v3+json'
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al guardar en GitHub');
+        }
+
+        const data = await response.json();
+        console.log(`✅ Archivo guardado en GitHub: ${data.content?.html_url || nombreArchivo}`);
+        return { success: true, url: data.content?.html_url, sha: data.content?.sha };
+
+    } catch (error) {
+        console.error('❌ Error al guardar en GitHub:', error.message);
+        return { success: false, error: error.message };
+    }
 }
 
 // ============ CARGAR DATOS EXISTENTES ============
@@ -94,7 +190,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
         await page.goto(urlDrama, { waitUntil: 'networkidle2', timeout: 60000 });
         await esperar(3000);
         
-        // Extraer título y sinopsis
         const metadata = await page.evaluate(() => {
             const titulo = document.querySelector('h1')?.textContent?.trim() || '';
             const sinopsis = document.querySelector('.sinopsis, .description, p')?.textContent?.trim() || '';
@@ -106,7 +201,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
             return { titulo, sinopsis, etiquetas };
         });
         
-        // Extraer TODOS los episodios
         const episodios = await page.evaluate(() => {
             const episodios = [];
             const links = document.querySelectorAll('a[href*="/detail/watch/"]');
@@ -116,7 +210,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                 const href = link.getAttribute('href');
                 const texto = link.textContent?.trim() || '';
                 
-                // Buscar números de episodio
                 const match = texto.match(/Episodio\s*(\d+)/i) || 
                              texto.match(/EP\s*(\d+)/i) ||
                              texto.match(/#(\d+)/);
@@ -137,7 +230,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                 }
             }
             
-            // Si no encontró episodios con número, buscar todos los enlaces
             if (episodios.length === 0) {
                 for (const link of links) {
                     const href = link.getAttribute('href');
@@ -159,12 +251,10 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                 }
             }
             
-            // Ordenar por número
             episodios.sort((a, b) => a.numero - b.numero);
             return episodios;
         });
         
-        // Extraer video de cada episodio
         for (const ep of episodios) {
             try {
                 const pageVideo = await browser.newPage();
@@ -232,7 +322,6 @@ async function scrapearDesdeURL(urlPersonalizada) {
         const html = await page.content();
         const $ = cheerio.load(html);
         
-        // Extraer lista de dramas
         const dramasList = [];
         $('a[href*="/detail/watch/"]').each((i, el) => {
             const href = $(el).attr('href');
@@ -243,7 +332,6 @@ async function scrapearDesdeURL(urlPersonalizada) {
             }
         });
         
-        // Eliminar duplicados
         const unicos = [];
         const urlsVistas = new Set();
         for (const drama of dramasList) {
@@ -255,7 +343,6 @@ async function scrapearDesdeURL(urlPersonalizada) {
         
         console.log(`📊 Encontrados ${unicos.length} dramas en la URL`);
         
-        // Procesar CADA drama con TODOS sus episodios
         const resultados = [];
         const limite = Math.min(10, unicos.length);
         
@@ -345,7 +432,6 @@ async function scrapearTodosLosDramas() {
         
         console.log(`📊 Total: ${todosLosDramas.length} dramas`);
         
-        // Procesar cada drama con TODOS sus episodios
         const resultados = [];
         const limite = Math.min(10, todosLosDramas.length);
         
@@ -376,67 +462,7 @@ async function scrapearTodosLosDramas() {
     }
 }
 
-// ============ GITHUB API FUNCTIONS ============
-
-async function guardarEnGitHub(contenido, nombreArchivo = 'dramas-completos-paginado.json', mensaje = '📊 Actualización automática de datos') {
-    if (!GITHUB_TOKEN) {
-        console.error('❌ GITHUB_TOKEN no configurado');
-        return { success: false, error: 'Token no configurado' };
-    }
-
-    try {
-        const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/${nombreArchivo}`;
-        const contenidoBase64 = Buffer.from(JSON.stringify(contenido, null, 2)).toString('base64');
-        
-        let sha = null;
-        try {
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `token ${GITHUB_TOKEN}`,
-                    'Accept': 'application/vnd.github.v3+json'
-                }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                sha = data.sha;
-            }
-        } catch (e) {
-            console.log('ℹ️ Archivo no existe en GitHub, se creará uno nuevo');
-        }
-
-        const body = {
-            message: mensaje,
-            content: contenidoBase64,
-            branch: GITHUB_BRANCH
-        };
-        if (sha) {
-            body.sha = sha;
-        }
-
-        const response = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Authorization': `token ${GITHUB_TOKEN}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/vnd.github.v3+json'
-            },
-            body: JSON.stringify(body)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Error al guardar en GitHub');
-        }
-
-        const data = await response.json();
-        console.log(`✅ Archivo guardado en GitHub: ${data.content?.html_url || nombreArchivo}`);
-        return { success: true, url: data.content?.html_url, sha: data.content?.sha };
-
-    } catch (error) {
-        console.error('❌ Error al guardar en GitHub:', error.message);
-        return { success: false, error: error.message };
-    }
-}
+// ============ FUNCIONES DE GUARDADO ============
 
 async function guardarDatosLocalmente(datos) {
     const archivo = CONFIG.archivoSalida;
@@ -454,7 +480,7 @@ app.get('/panel', (req, res) => {
 
 // 2. Scraping desde URL personalizada
 app.post('/api/scrapear-url', async (req, res) => {
-    const { url, guardarEnGitHub = true } = req.body;
+    const { url, guardarEnGitHub = true, guardarEnFirebase = true } = req.body;
     
     if (!url || !url.includes('edge.narto-drama.com')) {
         return res.status(400).json({ 
@@ -488,8 +514,21 @@ app.post('/api/scrapear-url', async (req, res) => {
             const totalEpisodios = resultados.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
             agregarLog(`✅ Scraping completado: ${resultados.length} dramas, ${totalEpisodios} episodios`, 'success');
 
+            // Guardar localmente
             await guardarDatosLocalmente(resultados);
             
+            // Guardar en Firebase
+            if (guardarEnFirebase && FIREBASE_URL) {
+                agregarLog('📤 Guardando en Firebase...', 'info');
+                const resultadoFirebase = await guardarEnFirebase(resultados);
+                if (resultadoFirebase.success) {
+                    agregarLog(`✅ Datos guardados en Firebase: ${resultadoFirebase.url}`, 'success');
+                } else {
+                    agregarLog(`⚠️ Error al guardar en Firebase: ${resultadoFirebase.error}`, 'error');
+                }
+            }
+            
+            // Guardar en GitHub
             if (guardarEnGitHub && GITHUB_TOKEN) {
                 agregarLog('📤 Subiendo datos a GitHub...', 'info');
                 const resultadoGit = await guardarEnGitHub(
@@ -523,7 +562,7 @@ app.post('/api/scrapear', async (req, res) => {
         });
     }
 
-    const { guardarEnGitHub: guardarEnGit = true } = req.body;
+    const { guardarEnGitHub = true, guardarEnFirebase = true } = req.body;
     estadoScraping.enProgreso = true;
     agregarLog('🚀 Iniciando scraping completo...', 'info');
     
@@ -544,7 +583,17 @@ app.post('/api/scrapear', async (req, res) => {
 
             await guardarDatosLocalmente(resultados);
             
-            if (guardarEnGit && GITHUB_TOKEN) {
+            if (guardarEnFirebase && FIREBASE_URL) {
+                agregarLog('📤 Guardando en Firebase...', 'info');
+                const resultadoFirebase = await guardarEnFirebase(resultados);
+                if (resultadoFirebase.success) {
+                    agregarLog(`✅ Datos guardados en Firebase: ${resultadoFirebase.url}`, 'success');
+                } else {
+                    agregarLog(`⚠️ Error al guardar en Firebase: ${resultadoFirebase.error}`, 'error');
+                }
+            }
+            
+            if (guardarEnGitHub && GITHUB_TOKEN) {
                 agregarLog('📤 Subiendo datos a GitHub...', 'info');
                 const resultadoGit = await guardarEnGitHub(
                     resultados, 
@@ -577,6 +626,7 @@ app.get('/api/estado-scraping', (req, res) => {
         logs: estadoScraping.logs.slice(0, 20),
         version: '2.0.0',
         githubConfigurado: !!GITHUB_TOKEN,
+        firebaseConfigurado: !!FIREBASE_URL,
         repo: GITHUB_REPO
     });
 });
@@ -601,7 +651,52 @@ app.post('/api/guardar-github', async (req, res) => {
     }
 });
 
-// 6. Obtener datos actuales
+// 6. Guardar en Firebase manualmente
+app.post('/api/guardar-firebase', async (req, res) => {
+    try {
+        const { ruta = 'dramas', datos = dramasData } = req.body;
+        
+        if (!FIREBASE_URL) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'FIREBASE_URL no configurado' 
+            });
+        }
+
+        const resultado = await guardarEnFirebase(datos, ruta);
+        res.json(resultado);
+        
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 7. Obtener datos desde Firebase
+app.get('/api/firebase', async (req, res) => {
+    try {
+        if (!FIREBASE_URL) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'FIREBASE_URL no configurado' 
+            });
+        }
+
+        const response = await fetch(`${FIREBASE_URL}/dramas.json`);
+        if (!response.ok) {
+            throw new Error(`Error al obtener datos: ${response.status}`);
+        }
+        const data = await response.json();
+        res.json({
+            success: true,
+            data: data,
+            url: `${FIREBASE_URL}/dramas.json`
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 8. Obtener datos actuales
 app.get('/api/datos', (req, res) => {
     const totalEpisodios = dramasData.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
     res.json({
@@ -612,7 +707,7 @@ app.get('/api/datos', (req, res) => {
     });
 });
 
-// 7. Listar todos los dramas
+// 9. Listar todos los dramas
 app.get('/api/dramas', (req, res) => {
     const { limit = 50, offset = 0, search = '' } = req.query;
     let resultados = dramasData;
@@ -640,7 +735,7 @@ app.get('/api/dramas', (req, res) => {
     });
 });
 
-// 8. Obtener un drama específico
+// 10. Obtener un drama específico
 app.get('/api/dramas/:id', (req, res) => {
     const drama = dramasData.find(d => d.titulo === req.params.id || d.id === req.params.id);
     if (!drama) {
@@ -649,7 +744,7 @@ app.get('/api/dramas/:id', (req, res) => {
     res.json(drama);
 });
 
-// 9. Estadísticas
+// 11. Estadísticas
 app.get('/api/stats', (req, res) => {
     const totalEpisodios = dramasData.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
     const conVideo = dramasData.filter(d => d.episodios?.some(e => e.videoUrl)).length;
@@ -666,7 +761,7 @@ app.get('/api/stats', (req, res) => {
     });
 });
 
-// 10. Ruta principal
+// 12. Ruta principal
 app.get('/', (req, res) => {
     res.json({
         nombre: 'Narto Drama API',
@@ -676,6 +771,10 @@ app.get('/', (req, res) => {
             repo: GITHUB_REPO,
             configurado: !!GITHUB_TOKEN
         },
+        firebase: {
+            url: FIREBASE_URL,
+            configurado: !!FIREBASE_URL
+        },
         endpoints: {
             '/api/dramas': 'Lista todos los dramas',
             '/api/dramas/:id': 'Obtener drama específico',
@@ -684,6 +783,8 @@ app.get('/', (req, res) => {
             '/api/scrapear-url': 'Scrapear desde URL personalizada (POST)',
             '/api/estado-scraping': 'Estado del scraping',
             '/api/guardar-github': 'Guardar en GitHub (POST)',
+            '/api/guardar-firebase': 'Guardar en Firebase (POST)',
+            '/api/firebase': 'Obtener datos desde Firebase',
             '/api/datos': 'Obtener todos los datos'
         }
     });
@@ -696,5 +797,6 @@ app.listen(PORT, () => {
     console.log(`📊 Panel: http://localhost:${PORT}/panel`);
     console.log(`📚 API: http://localhost:${PORT}/api/dramas`);
     console.log(`🔐 GitHub: ${GITHUB_TOKEN ? '✅ Configurado' : '❌ No configurado'}`);
+    console.log(`🔥 Firebase: ${FIREBASE_URL ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`📁 Repo: ${GITHUB_REPO}`);
 });

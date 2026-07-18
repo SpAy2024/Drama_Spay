@@ -445,6 +445,15 @@
             </div>
         </div>
 
+        <div class="actions">
+    <button class="btn btn-success" onclick="guardarFirebase()">
+        🔥 Guardar en Firebase
+    </button>
+    <button class="btn btn-secondary" onclick="cargarFirebase()">
+        📥 Cargar desde Firebase
+    </button>
+</div>
+
         <!-- Scraping por URL personalizada -->
         <div class="card">
             <h2>🔗 Scraping desde URL Personalizada</h2>
@@ -704,6 +713,55 @@
                 iniciarScrapingURL();
             }
         });
+
+
+
+   
+// ============ FUNCIONES DE FIREBASE ============
+
+function guardarFirebase() {
+    agregarLog('🔥 Guardando datos en Firebase...', 'info');
+    fetch(`${API_URL}/api/guardar-firebase`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            ruta: 'dramas',
+            datos: null // Usa los datos actuales
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            agregarLog(`✅ Datos guardados en Firebase: ${data.url}`, 'success');
+        } else {
+            agregarLog(`❌ Error al guardar en Firebase: ${data.error}`, 'error');
+        }
+    })
+    .catch(err => {
+        agregarLog(`❌ Error: ${err.message}`, 'error');
+    });
+}
+
+function cargarFirebase() {
+    agregarLog('📥 Cargando datos desde Firebase...', 'info');
+    fetch(`${API_URL}/api/firebase`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                agregarLog(`✅ Datos cargados desde Firebase: ${data.data?.length || 0} dramas`, 'success');
+                // Actualizar la interfaz
+                cargarResultados();
+                cargarStats();
+            } else {
+                agregarLog(`❌ Error al cargar desde Firebase: ${data.error}`, 'error');
+            }
+        })
+        .catch(err => {
+            agregarLog(`❌ Error: ${err.message}`, 'error');
+        });
+}
+
+
     </script>
 </body>
 </html>
