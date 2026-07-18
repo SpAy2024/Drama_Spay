@@ -64,7 +64,7 @@ app.get('/api/dramas', (req, res) => {
 });
 
 // 2. Obtener un drama específico CON episodios
-app.get('/api/dramas/:id', (req, res) => {
+ app.get('/api/dramas/:id', (req, res) => {
     const drama = dramasData.find(d => d.id === req.params.id);
     
     if (!drama) {
@@ -74,13 +74,20 @@ app.get('/api/dramas/:id', (req, res) => {
     // Agregar URL completa del poster
     const response = {
         ...drama,
-        poster: `${req.protocol}://${req.get('host')}/posters/${drama.id}.jpg`
+        poster: `${req.protocol}://${req.get('host')}/posters/${drama.id}.jpg`,
+        episodios: drama.episodios.map(ep => ({
+            ...ep,
+            // Si tenemos videoUrl, la devolvemos
+            videoUrl: ep.videoUrl || null,
+            // URL de la página del episodio (por si acaso)
+            pageUrl: ep.url
+        }))
     };
     
     res.json(response);
 });
 
-// 3. Obtener un episodio específico
+// 3. Obtener un episodio específico CON video
 app.get('/api/dramas/:dramaId/episodios/:numero', (req, res) => {
     const drama = dramasData.find(d => d.id === req.params.dramaId);
     
@@ -96,10 +103,14 @@ app.get('/api/dramas/:dramaId/episodios/:numero', (req, res) => {
     
     res.json({
         drama: drama.titulo,
-        episodio: episodio
+        episodio: {
+            numero: episodio.numero,
+            titulo: episodio.titulo,
+            url: episodio.url,
+            videoUrl: episodio.videoUrl || null, // URL directa del video
+        }
     });
 });
-
 // 4. Buscar por etiquetas
 app.get('/api/etiquetas/:tag', (req, res) => {
     const tag = req.params.tag.toLowerCase();
