@@ -64,6 +64,7 @@ function agregarLog(mensaje, tipo = 'info') {
 
 // ============ FUNCIONES DE FIREBASE ============
 
+// server.js - Función Firebase corregida
 async function guardarEnFirebase(datos, ruta = 'dramas') {
     if (!FIREBASE_URL) {
         console.error('❌ FIREBASE_URL no configurado');
@@ -71,7 +72,18 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
     }
 
     try {
-        const url = `${FIREBASE_URL}/${ruta}.json`;
+        // Limpiar URL (eliminar doble slash)
+        let baseUrl = FIREBASE_URL.replace(/\/+$/, ''); // Eliminar slash final
+        let url = `${baseUrl}/${ruta}.json`;
+        
+        // Si tenemos secret, usarlo como auth
+        if (FIREBASE_SECRET) {
+            url = `${url}?auth=${FIREBASE_SECRET}`;
+        }
+
+        console.log(`📤 Enviando a Firebase: ${url}`);
+        console.log(`📊 Datos a guardar: ${JSON.stringify(datos).length} bytes`);
+        
         const response = await fetch(url, {
             method: 'PUT',
             headers: {
@@ -81,11 +93,38 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
         });
 
         if (!response.ok) {
-            throw new Error(`Error al guardar en Firebase: ${response.status}`);
+            const errorText = await response.text();
+            console.error(`❌ Firebase error ${response.status}: ${errorText}`);
+            
+            // Si es 401, intentar sin autenticación
+            if (response.status === 401 && FIREBASE_SECRET) {
+                console.log('🔄 Intentando sin autenticación...');
+                const fallbackUrl = `${baseUrl}/${ruta}.json`;
+                const fallbackResponse = await fetch(fallbackUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(datos)
+                });
+                if (fallbackResponse.ok) {
+                    console.log(`✅ Datos guardados en Firebase (sin auth)`);
+                    return { success: true, url: `${baseUrl}/${ruta}` };
+                }
+            }
+            
+            throw new Error(`Error ${response.status}: ${errorText}`);
         }
 
-        console.log(`✅ Datos guardados en Firebase: ${FIREBASE_URL}/${ruta}`);
-        return { success: true, url: `${FIREBASE_URL}/${ruta}` };
+        const responseData = await response.json();
+        console.log(`✅ Datos guardados en Firebase: ${baseUrl}/${ruta}`);
+        console.log(`📝 Respuesta Firebase:`, responseData);
+        
+        return { 
+            success: true, 
+            url: `${baseUrl}/${ruta}`,
+            data: responseData
+        };
     } catch (error) {
         console.error('❌ Error al guardar en Firebase:', error.message);
         return { success: false, error: error.message };
@@ -476,6 +515,41 @@ async function guardarDatosLocalmente(datos) {
 // 1. Panel web
 app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'panel.html'));
+});
+
+
+
+
+// server.js - Endpoint para verificar Firebase
+app.get('/api/firebase-verificar', async (req, res) => {
+    try {
+        if (!FIREBASE_URL) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'FIREBASE_URL no configurado' 
+            });
+        }
+
+        const baseUrl = FIREBASE_URL.replace(/\/+$/, '');
+        const url = `${baseUrl}/dramas.json`;
+        
+        console.log(`🔍 Verificando Firebase: ${url}`);
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Error ${response.status}: ${await response.text()}`);
+        }
+        
+        const data = await response.json();
+        res.json({
+            success: true,
+            url: url,
+            data: data,
+            total: Array.isArray(data) ? data.length : (data ? 1 : 0)
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // 2. Scraping desde URL personalizada
