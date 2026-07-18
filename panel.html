@@ -308,10 +308,9 @@
             font-size: 14px;
             cursor: pointer;
         }
-        /* Resultados en tiempo real */
         .results-container {
             margin-top: 12px;
-            max-height: 400px;
+            max-height: 500px;
             overflow-y: auto;
         }
         .result-item {
@@ -320,15 +319,17 @@
             border-radius: 8px;
             padding: 12px 16px;
             margin-bottom: 8px;
+            transition: all 0.3s;
+        }
+        .result-item:hover {
+            border-color: #e50914;
+        }
+        .result-item .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
             gap: 8px;
-            transition: all 0.3s;
-        }
-        .result-item:hover {
-            border-color: #e50914;
         }
         .result-item .titulo {
             font-size: 14px;
@@ -337,36 +338,45 @@
             flex: 1;
             min-width: 150px;
         }
-        .result-item .status {
+        .result-item .badge {
             font-size: 12px;
-            padding: 4px 12px;
+            padding: 2px 10px;
             border-radius: 20px;
             font-weight: bold;
         }
-        .result-item .status.success {
+        .result-item .badge.success {
             background: #22c55e;
             color: #fff;
         }
-        .result-item .status.error {
+        .result-item .badge.error {
             background: #ef4444;
             color: #fff;
         }
-        .result-item .status.pending {
+        .result-item .badge.pending {
             background: #fbbf24;
             color: #000;
         }
-        .result-item .video-url {
+        .result-item .episodios {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+        }
+        .result-item .episodio {
+            background: #1a1a1a;
+            padding: 2px 8px;
+            border-radius: 4px;
             font-size: 11px;
             color: #666;
-            word-break: break-all;
-            max-width: 300px;
+            border: 1px solid #2a2a2a;
         }
-        .result-item .video-url a {
-            color: #60a5fa;
-            text-decoration: none;
+        .result-item .episodio.has-video {
+            color: #22c55e;
+            border-color: #22c55e;
         }
-        .result-item .video-url a:hover {
-            text-decoration: underline;
+        .result-item .episodio.no-video {
+            color: #666;
+            border-color: #3a3a3a;
         }
         .result-count {
             color: #888;
@@ -387,7 +397,7 @@
                 min-width: unset;
                 width: 100%;
             }
-            .result-item {
+            .result-item .header {
                 flex-direction: column;
                 align-items: flex-start;
             }
@@ -539,8 +549,8 @@
                 .then(res => res.json())
                 .then(data => {
                     document.getElementById('totalEpisodios').textContent = data.totalEpisodios || 0;
-                    document.getElementById('conVideo').textContent = data.conVideo || 0;
-                    document.getElementById('sinVideo').textContent = data.sinVideo || 0;
+                    document.getElementById('conVideo').textContent = data.episodiosConVideo || 0;
+                    document.getElementById('sinVideo').textContent = (data.totalEpisodios || 0) - (data.episodiosConVideo || 0);
                 })
                 .catch(err => {
                     console.error('Error cargando stats:', err);
@@ -555,23 +565,40 @@
                     const count = document.getElementById('resultsCount');
                     
                     if (data.datos && data.datos.length > 0) {
-                        count.textContent = `📊 ${data.datos.length} dramas scrapeados`;
+                        const totalEpisodios = data.datos.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
+                        count.textContent = `📊 ${data.datos.length} dramas | 📺 ${totalEpisodios} episodios`;
                         
                         let html = '';
                         data.datos.forEach((drama, index) => {
-                            const statusClass = drama.videoUrl ? 'success' : (drama.error ? 'error' : 'pending');
-                            const statusText = drama.videoUrl ? '✅ Video' : (drama.error ? '❌ Error' : '⏳ Sin video');
+                            const epCount = drama.episodios?.length || 0;
+                            const conVideo = drama.episodios?.filter(e => e.videoUrl).length || 0;
+                            const statusClass = epCount > 0 && conVideo === epCount ? 'success' : 
+                                               (drama.error ? 'error' : 'pending');
+                            const statusText = drama.error ? '❌ Error' : 
+                                              (epCount > 0 && conVideo === epCount ? '✅ Completo' : '⏳ Parcial');
                             
                             html += `
                                 <div class="result-item">
-                                    <span class="titulo">${index + 1}. ${drama.titulo}</span>
-                                    <span class="status ${statusClass}">${statusText}</span>
-                                    ${drama.videoUrl ? `
-                                        <span class="video-url">
-                                            <a href="${drama.videoUrl}" target="_blank">Ver video</a>
+                                    <div class="header">
+                                        <span class="titulo">${index + 1}. ${drama.titulo || 'Sin título'}</span>
+                                        <span class="badge ${statusClass}">${statusText}</span>
+                                        <span style="font-size:12px; color:#888;">
+                                            📺 ${epCount} eps | 🎬 ${conVideo} con video
                                         </span>
+                                    </div>
+                                    ${epCount > 0 ? `
+                                        <div class="episodios">
+                                            ${drama.episodios.slice(0, 20).map(ep => `
+                                                <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}">
+                                                    #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
+                                                </span>
+                                            `).join('')}
+                                            ${epCount > 20 ? `<span style="color:#666; font-size:11px; padding:2px 8px;">+${epCount - 20} más</span>` : ''}
+                                        </div>
                                     ` : (drama.error ? `
-                                        <span class="video-url" style="color:#ef4444;">${drama.error}</span>
+                                        <div style="color:#ef4444; font-size:12px; margin-top:4px;">
+                                            ❌ ${drama.error}
+                                        </div>
                                     ` : '')}
                                 </div>
                             `;
@@ -610,7 +637,6 @@
             document.getElementById('btnScrapearURL').disabled = true;
             document.getElementById('loadingBar').classList.add('active');
             
-            // Limpiar resultados anteriores
             document.getElementById('resultsContainer').innerHTML = `
                 <div style="color:#fbbf24; text-align:center; padding:20px;">
                     ⏳ Scrapeando... <span class="spinner"></span>
@@ -639,7 +665,7 @@
                             if (!d.enProgreso) {
                                 clearInterval(intervalEstado);
                                 clearInterval(intervalResultados);
-                                agregarLog('✅ Scraping completado desde URL personalizada', 'success');
+                                agregarLog('✅ Scraping completado', 'success');
                                 document.getElementById('btnScrapearURL').disabled = false;
                                 document.getElementById('loadingBar').classList.remove('active');
                                 cargarStats();
@@ -673,7 +699,6 @@
             cargarResultados();
         }, 10000);
 
-        // Enter en el campo de URL
         document.getElementById('urlInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 iniciarScrapingURL();
