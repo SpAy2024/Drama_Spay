@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎬 Panel de Scraping - Narto Drama</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0d0d0d;
+            color: #f0f0f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #e50914;
+            font-size: 28px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 12px;
+            color: #fff;
+        }
+        .card p {
+            color: #aaa;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #e50914;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #f6121d;
+            transform: scale(1.02);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-success {
+            background: #22c55e;
+            color: #fff;
+        }
+        .btn-success:hover {
+            background: #16a34a;
+        }
+        .btn-danger {
+            background: #ef4444;
+            color: #fff;
+        }
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .stat-item {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-item .num {
+            font-size: 28px;
+            font-weight: bold;
+            color: #e50914;
+        }
+        .stat-item .label {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+        .log-container {
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 16px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            color: #e0e0e0;
+            margin-top: 12px;
+        }
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+        .log-entry .time {
+            color: #666;
+            margin-right: 12px;
+        }
+        .log-entry .level-info {
+            color: #60a5fa;
+        }
+        .log-entry .level-success {
+            color: #22c55e;
+        }
+        .log-entry .level-error {
+            color: #ef4444;
+        }
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #2a2a2a;
+            border-top-color: #e50914;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-badge.running {
+            background: #e50914;
+            color: #fff;
+        }
+        .status-badge.idle {
+            background: #2a2a2a;
+            color: #888;
+        }
+        .status-badge.done {
+            background: #22c55e;
+            color: #fff;
+        }
+        .loading-bar {
+            width: 100%;
+            height: 4px;
+            background: #2a2a2a;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+            display: none;
+        }
+        .loading-bar.active {
+            display: block;
+        }
+        .loading-bar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e50914, #f6121d);
+            border-radius: 2px;
+            width: 0%;
+            animation: progress 2s ease-in-out infinite;
+        }
+        @keyframes progress {
+            0% {
+                width: 0%;
+            }
+            50% {
+                width: 70%;
+            }
+            100% {
+                width: 100%;
+            }
+        }
+        .file-list {
+            margin-top: 12px;
+        }
+        .file-item {
+            background: #2a2a2a;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-item .name {
+            color: #e0e0e0;
+            font-size: 13px;
+        }
+        .file-item .size {
+            color: #888;
+            font-size: 12px;
+        }
+        @media (max-width: 640px) {
+            h1 {
+                font-size: 22px;
+            }
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Panel de Scraping</h1>
+        <div class="subtitle">Gestiona el scraping de dramas y actualiza la API automáticamente</div>
+
+        <!-- Estado -->
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2>📊 Estado del Sistema</h2>
+                <span class="status-badge idle" id="statusBadge">🟢 IDLE</span>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="num" id="totalDramas">0</div>
+                    <div class="label">Dramas</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num" id="totalEpisodios">0</div>
+                    <div class="label">Episodios</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num" id="ultimoScraping">-</div>
+                    <div class="label">Última actualización</div>
+                </div>
+            </div>
+            <div class="loading-bar" id="loadingBar">
+                <div class="fill"></div>
+            </div>
+        </div>
+
+        <!-- Acciones -->
+        <div class="card">
+            <h2>⚡ Acciones</h2>
+            <div class="actions">
+                <button class="btn btn-primary" id="btnScrapear" onclick="iniciarScraping()">
+                    🚀 Iniciar Scraping
+                </button>
+                <button class="btn btn-success" onclick="actualizarEstado()">
+                    🔄 Actualizar Estado
+                </button>
+                <button class="btn btn-danger" onclick="limpiarLogs()">
+                    🗑️ Limpiar Logs
+                </button>
+            </div>
+        </div>
+
+        <!-- Logs -->
+        <div class="card">
+            <h2>📋 Logs</h2>
+            <div class="log-container" id="logContainer">
+                <div class="log-entry">
+                    <span class="time">[Sistema]</span>
+                    <span class="level-info">Panel iniciado. Esperando acciones...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Archivos -->
+        <div class="card">
+            <h2>📁 Archivos Generados</h2>
+            <div class="file-list" id="fileList">
+                <div class="file-item">
+                    <span class="name">dramas-completos-paginado.json</span>
+                    <span class="size">Esperando datos...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuración
+        const API_URL = window.location.origin;
+        let intervalEstado = null;
+
+        // ============ FUNCIONES ============
+
+        function agregarLog(mensaje, nivel = 'info') {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString();
+            const levelClass = nivel === 'success' ? 'level-success' : 
+                              nivel === 'error' ? 'level-error' : 'level-info';
+            entry.innerHTML = `
+                <span class="time">[${time}]</span>
+                <span class="${levelClass}">${mensaje}</span>
+            `;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function actualizarEstado() {
+            fetch(`${API_URL}/api/estado-scraping`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('totalDramas').textContent = data.totalDramas || 0;
+                    if (data.ultimoScraping) {
+                        document.getElementById('ultimoScraping').textContent = 
+                            new Date(data.ultimoScraping).toLocaleString();
+                    }
+                    
+                    const badge = document.getElementById('statusBadge');
+                    if (data.enProgreso) {
+                        badge.textContent = '🔄 SCRAPING...';
+                        badge.className = 'status-badge running';
+                        document.getElementById('loadingBar').classList.add('active');
+                        document.getElementById('btnScrapear').disabled = true;
+                    } else {
+                        badge.textContent = '🟢 IDLE';
+                        badge.className = 'status-badge idle';
+                        document.getElementById('loadingBar').classList.remove('active');
+                        document.getElementById('btnScrapear').disabled = false;
+                    }
+                })
+                .catch(err => {
+                    agregarLog(`❌ Error al obtener estado: ${err.message}`, 'error');
+                });
+        }
+
+        function iniciarScraping() {
+            if (document.getElementById('btnScrapear').disabled) return;
+            
+            agregarLog('🚀 Iniciando scraping...', 'info');
+            document.getElementById('btnScrapear').disabled = true;
+            document.getElementById('loadingBar').classList.add('active');
+            
+            fetch(`${API_URL}/api/scrapear`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                agregarLog(`📊 ${data.mensaje}`, 'success');
+                
+                // Actualizar estado cada 5 segundos
+                if (intervalEstado) clearInterval(intervalEstado);
+                intervalEstado = setInterval(() => {
+                    actualizarEstado();
+                    // Verificar si terminó
+                    fetch(`${API_URL}/api/estado-scraping`)
+                        .then(r => r.json())
+                        .then(d => {
+                            if (!d.enProgreso) {
+                                clearInterval(intervalEstado);
+                                agregarLog('✅ Scraping completado', 'success');
+                                document.getElementById('btnScrapear').disabled = false;
+                                document.getElementById('loadingBar').classList.remove('active');
+                                // Recargar archivos
+                                cargarArchivos();
+                            }
+                        });
+                }, 5000);
+            })
+            .catch(err => {
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+                document.getElementById('btnScrapear').disabled = false;
+                document.getElementById('loadingBar').classList.remove('active');
+            });
+        }
+
+        function cargarArchivos() {
+            // Verificar si existen archivos de datos
+            fetch(`${API_URL}/api/stats`)
+                .then(res => res.json())
+                .then(data => {
+                    const fileList = document.getElementById('fileList');
+                    const totalDramas = data.totalDramas || 0;
+                    const totalEpisodios = data.totalEpisodios || 0;
+                    document.getElementById('totalEpisodios').textContent = totalEpisodios;
+                    
+                    fileList.innerHTML = `
+                        <div class="file-item">
+                            <span class="name">📊 ${totalDramas} dramas scrapeados</span>
+                            <span class="size">${totalEpisodios} episodios</span>
+                        </div>
+                        <div class="file-item">
+                            <span class="name">📁 dramas-completos-paginado.json</span>
+                            <span class="size">${(totalDramas > 0) ? '✅ Disponible' : '⏳ Pendiente'}</span>
+                        </div>
+                    `;
+                })
+                .catch(() => {});
+        }
+
+        function limpiarLogs() {
+            const container = document.getElementById('logContainer');
+            container.innerHTML = `
+                <div class="log-entry">
+                    <span class="time">[Sistema]</span>
+                    <span class="level-info">Logs limpiados</span>
+                </div>
+            `;
+        }
+
+        // ============ INICIO ============
+
+        agregarLog('🔧 Panel iniciado correctamente', 'info');
+        actualizarEstado();
+        cargarArchivos();
+
+        // Actualizar estado cada 30 segundos
+        setInterval(() => {
+            actualizarEstado();
+        }, 30000);
+
+        // Actualizar archivos cada 60 segundos
+        setInterval(() => {
+            cargarArchivos();
+        }, 60000);
+    </script>
+</body>
+</html>
