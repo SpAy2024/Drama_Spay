@@ -18,7 +18,7 @@
             padding: 20px;
         }
         .container {
-            max-width: 1000px;
+            max-width: 1200px;
             margin: 0 auto;
         }
         h1 {
@@ -135,7 +135,7 @@
             border: 1px solid #2a2a2a;
             border-radius: 8px;
             padding: 16px;
-            max-height: 300px;
+            max-height: 200px;
             overflow-y: auto;
             font-family: 'Consolas', monospace;
             font-size: 13px;
@@ -271,9 +271,6 @@
         .url-input-group input::placeholder {
             color: #666;
         }
-        .url-input-group .btn {
-            flex-shrink: 0;
-        }
         .url-examples {
             display: flex;
             gap: 8px;
@@ -311,6 +308,71 @@
             font-size: 14px;
             cursor: pointer;
         }
+        /* Resultados en tiempo real */
+        .results-container {
+            margin-top: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .result-item {
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+        .result-item:hover {
+            border-color: #e50914;
+        }
+        .result-item .titulo {
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            flex: 1;
+            min-width: 150px;
+        }
+        .result-item .status {
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+        .result-item .status.success {
+            background: #22c55e;
+            color: #fff;
+        }
+        .result-item .status.error {
+            background: #ef4444;
+            color: #fff;
+        }
+        .result-item .status.pending {
+            background: #fbbf24;
+            color: #000;
+        }
+        .result-item .video-url {
+            font-size: 11px;
+            color: #666;
+            word-break: break-all;
+            max-width: 300px;
+        }
+        .result-item .video-url a {
+            color: #60a5fa;
+            text-decoration: none;
+        }
+        .result-item .video-url a:hover {
+            text-decoration: underline;
+        }
+        .result-count {
+            color: #888;
+            font-size: 13px;
+            margin-top: 8px;
+        }
         @media (max-width: 640px) {
             h1 {
                 font-size: 22px;
@@ -324,6 +386,10 @@
             .url-input-group input {
                 min-width: unset;
                 width: 100%;
+            }
+            .result-item {
+                flex-direction: column;
+                align-items: flex-start;
             }
         }
     </style>
@@ -395,22 +461,14 @@
             </div>
         </div>
 
-        <!-- Acciones rápidas -->
+        <!-- Resultados en tiempo real -->
         <div class="card">
-            <h2>⚡ Acciones Rápidas</h2>
-            <div class="actions">
-                <button class="btn btn-primary" id="btnScrapear" onclick="iniciarScraping()">
-                    🚀 Scraping Completo
-                </button>
-                <button class="btn btn-success" onclick="actualizarEstado()">
-                    🔄 Actualizar Estado
-                </button>
-                <button class="btn btn-secondary" onclick="guardarGitHub()">
-                    📤 Guardar en GitHub
-                </button>
-                <button class="btn btn-danger" onclick="limpiarLogs()">
-                    🗑️ Limpiar Logs
-                </button>
+            <h2>📋 Resultados del Scraping</h2>
+            <div id="resultsCount" class="result-count">Esperando scraping...</div>
+            <div id="resultsContainer" class="results-container">
+                <div style="color:#666; text-align:center; padding:20px;">
+                    No hay resultados aún. Inicia un scraping para ver los dramas.
+                </div>
             </div>
         </div>
 
@@ -430,6 +488,7 @@
         // ============ CONFIGURACIÓN ============
         const API_URL = window.location.origin;
         let intervalEstado = null;
+        let intervalResultados = null;
 
         // ============ FUNCIONES ============
 
@@ -462,13 +521,11 @@
                         badge.textContent = '🔄 SCRAPING...';
                         badge.className = 'status-badge running';
                         document.getElementById('loadingBar').classList.add('active');
-                        document.getElementById('btnScrapear').disabled = true;
                         document.getElementById('btnScrapearURL').disabled = true;
                     } else {
                         badge.textContent = '🟢 IDLE';
                         badge.className = 'status-badge idle';
                         document.getElementById('loadingBar').classList.remove('active');
-                        document.getElementById('btnScrapear').disabled = false;
                         document.getElementById('btnScrapearURL').disabled = false;
                     }
                 })
@@ -487,6 +544,50 @@
                 })
                 .catch(err => {
                     console.error('Error cargando stats:', err);
+                });
+        }
+
+        function cargarResultados() {
+            fetch(`${API_URL}/api/datos`)
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('resultsContainer');
+                    const count = document.getElementById('resultsCount');
+                    
+                    if (data.datos && data.datos.length > 0) {
+                        count.textContent = `📊 ${data.datos.length} dramas scrapeados`;
+                        
+                        let html = '';
+                        data.datos.forEach((drama, index) => {
+                            const statusClass = drama.videoUrl ? 'success' : (drama.error ? 'error' : 'pending');
+                            const statusText = drama.videoUrl ? '✅ Video' : (drama.error ? '❌ Error' : '⏳ Sin video');
+                            
+                            html += `
+                                <div class="result-item">
+                                    <span class="titulo">${index + 1}. ${drama.titulo}</span>
+                                    <span class="status ${statusClass}">${statusText}</span>
+                                    ${drama.videoUrl ? `
+                                        <span class="video-url">
+                                            <a href="${drama.videoUrl}" target="_blank">Ver video</a>
+                                        </span>
+                                    ` : (drama.error ? `
+                                        <span class="video-url" style="color:#ef4444;">${drama.error}</span>
+                                    ` : '')}
+                                </div>
+                            `;
+                        });
+                        container.innerHTML = html;
+                    } else {
+                        count.textContent = '📊 0 dramas scrapeados';
+                        container.innerHTML = `
+                            <div style="color:#666; text-align:center; padding:20px;">
+                                No hay resultados aún. Inicia un scraping para ver los dramas.
+                            </div>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    console.error('Error cargando resultados:', err);
                 });
         }
 
@@ -509,6 +610,14 @@
             document.getElementById('btnScrapearURL').disabled = true;
             document.getElementById('loadingBar').classList.add('active');
             
+            // Limpiar resultados anteriores
+            document.getElementById('resultsContainer').innerHTML = `
+                <div style="color:#fbbf24; text-align:center; padding:20px;">
+                    ⏳ Scrapeando... <span class="spinner"></span>
+                </div>
+            `;
+            document.getElementById('resultsCount').textContent = '⏳ Scrapeando...';
+            
             fetch(`${API_URL}/api/scrapear-url`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -519,6 +628,8 @@
                 agregarLog(`📊 ${data.mensaje}`, 'success');
                 
                 if (intervalEstado) clearInterval(intervalEstado);
+                if (intervalResultados) clearInterval(intervalResultados);
+                
                 intervalEstado = setInterval(() => {
                     actualizarEstado();
                     cargarStats();
@@ -527,13 +638,17 @@
                         .then(d => {
                             if (!d.enProgreso) {
                                 clearInterval(intervalEstado);
+                                clearInterval(intervalResultados);
                                 agregarLog('✅ Scraping completado desde URL personalizada', 'success');
                                 document.getElementById('btnScrapearURL').disabled = false;
                                 document.getElementById('loadingBar').classList.remove('active');
                                 cargarStats();
+                                cargarResultados();
                             }
                         });
-                }, 3000);
+                }, 2000);
+                
+                intervalResultados = setInterval(cargarResultados, 3000);
             })
             .catch(err => {
                 agregarLog(`❌ Error: ${err.message}`, 'error');
@@ -542,84 +657,12 @@
             });
         }
 
-        function iniciarScraping() {
-            if (document.getElementById('btnScrapear').disabled) return;
-            
-            const guardarGit = document.getElementById('guardarGitHub')?.checked !== false;
-            agregarLog(`🚀 Iniciando scraping completo...`, 'info');
-            document.getElementById('btnScrapear').disabled = true;
-            document.getElementById('loadingBar').classList.add('active');
-            
-            fetch(`${API_URL}/api/scrapear`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ guardarEnGitHub: guardarGit })
-            })
-            .then(res => res.json())
-            .then(data => {
-                agregarLog(`📊 ${data.mensaje}`, 'success');
-                
-                if (intervalEstado) clearInterval(intervalEstado);
-                intervalEstado = setInterval(() => {
-                    actualizarEstado();
-                    cargarStats();
-                    fetch(`${API_URL}/api/estado-scraping`)
-                        .then(r => r.json())
-                        .then(d => {
-                            if (!d.enProgreso) {
-                                clearInterval(intervalEstado);
-                                agregarLog('✅ Scraping completado', 'success');
-                                document.getElementById('btnScrapear').disabled = false;
-                                document.getElementById('loadingBar').classList.remove('active');
-                                cargarStats();
-                            }
-                        });
-                }, 3000);
-            })
-            .catch(err => {
-                agregarLog(`❌ Error: ${err.message}`, 'error');
-                document.getElementById('btnScrapear').disabled = false;
-                document.getElementById('loadingBar').classList.remove('active');
-            });
-        }
-
-        function guardarGitHub() {
-            agregarLog('📤 Guardando datos en GitHub...', 'info');
-            fetch(`${API_URL}/api/guardar-github`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    mensaje: `📊 Guardado manual desde el panel - ${new Date().toLocaleString()}`
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    agregarLog(`✅ Datos guardados en GitHub: ${data.url || 'OK'}`, 'success');
-                } else {
-                    agregarLog(`❌ Error al guardar: ${data.error}`, 'error');
-                }
-            })
-            .catch(err => {
-                agregarLog(`❌ Error: ${err.message}`, 'error');
-            });
-        }
-
-        function limpiarLogs() {
-            const container = document.getElementById('logContainer');
-            container.innerHTML = `
-                <div class="log-entry">
-                    <span class="time">[Sistema]</span>
-                    <span class="level-info">Logs limpiados</span>
-                </div>
-            `;
-        }
-
         // ============ INICIO ============
 
         agregarLog('🔧 Panel iniciado correctamente', 'info');
         actualizarEstado();
         cargarStats();
+        cargarResultados();
 
         setInterval(() => {
             actualizarEstado();
@@ -627,7 +670,8 @@
 
         setInterval(() => {
             cargarStats();
-        }, 60000);
+            cargarResultados();
+        }, 10000);
 
         // Enter en el campo de URL
         document.getElementById('urlInput').addEventListener('keydown', function(e) {
