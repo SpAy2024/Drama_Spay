@@ -18,7 +18,7 @@
             padding: 20px;
         }
         .container {
-            max-width: 900px;
+            max-width: 1000px;
             margin: 0 auto;
         }
         h1 {
@@ -87,6 +87,14 @@
         .btn-danger:hover {
             background: #dc2626;
         }
+        .btn-secondary {
+            background: #2a2a2a;
+            color: #e0e0e0;
+            border: 1px solid #3a3a3a;
+        }
+        .btn-secondary:hover {
+            background: #3a3a3a;
+        }
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -103,6 +111,12 @@
             font-size: 28px;
             font-weight: bold;
             color: #e50914;
+        }
+        .stat-item .num.green {
+            color: #22c55e;
+        }
+        .stat-item .num.yellow {
+            color: #fbbf24;
         }
         .stat-item .label {
             font-size: 12px;
@@ -207,25 +221,41 @@
                 width: 100%;
             }
         }
-        .file-list {
-            margin-top: 12px;
-        }
-        .file-item {
-            background: #2a2a2a;
+        .github-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             padding: 8px 12px;
             border-radius: 6px;
-            margin-bottom: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            background: #2a2a2a;
+            margin-top: 8px;
         }
-        .file-item .name {
-            color: #e0e0e0;
+        .github-status .icon {
+            font-size: 18px;
+        }
+        .github-status .text {
             font-size: 13px;
+            color: #e0e0e0;
         }
-        .file-item .size {
-            color: #888;
-            font-size: 12px;
+        .github-status .text .repo {
+            color: #60a5fa;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #e50914;
+            cursor: pointer;
+        }
+        .checkbox-group label {
+            color: #ccc;
+            font-size: 14px;
+            cursor: pointer;
         }
         @media (max-width: 640px) {
             h1 {
@@ -244,9 +274,12 @@
 
         <!-- Estado -->
         <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
                 <h2>📊 Estado del Sistema</h2>
-                <span class="status-badge idle" id="statusBadge">🟢 IDLE</span>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <span class="status-badge idle" id="statusBadge">🟢 IDLE</span>
+                    <span id="githubBadge" style="font-size:12px; color:#666;">🔐 GitHub: ⏳</span>
+                </div>
             </div>
             <div class="stats-grid">
                 <div class="stat-item">
@@ -258,9 +291,17 @@
                     <div class="label">Episodios</div>
                 </div>
                 <div class="stat-item">
-                    <div class="num" id="ultimoScraping">-</div>
-                    <div class="label">Última actualización</div>
+                    <div class="num green" id="conVideo">0</div>
+                    <div class="label">Con Video</div>
                 </div>
+                <div class="stat-item">
+                    <div class="num yellow" id="sinVideo">0</div>
+                    <div class="label">Sin Video</div>
+                </div>
+            </div>
+            <div class="github-status" id="githubStatus">
+                <span class="icon">🔐</span>
+                <span class="text">GitHub: <span class="repo" id="githubRepo">Cargando...</span></span>
             </div>
             <div class="loading-bar" id="loadingBar">
                 <div class="fill"></div>
@@ -270,12 +311,19 @@
         <!-- Acciones -->
         <div class="card">
             <h2>⚡ Acciones</h2>
+            <div class="checkbox-group">
+                <input type="checkbox" id="guardarGitHub" checked>
+                <label for="guardarGitHub">Guardar automáticamente en GitHub después del scraping</label>
+            </div>
             <div class="actions">
                 <button class="btn btn-primary" id="btnScrapear" onclick="iniciarScraping()">
                     🚀 Iniciar Scraping
                 </button>
                 <button class="btn btn-success" onclick="actualizarEstado()">
                     🔄 Actualizar Estado
+                </button>
+                <button class="btn btn-secondary" onclick="guardarGitHub()">
+                    📤 Guardar en GitHub
                 </button>
                 <button class="btn btn-danger" onclick="limpiarLogs()">
                     🗑️ Limpiar Logs
@@ -293,21 +341,10 @@
                 </div>
             </div>
         </div>
-
-        <!-- Archivos -->
-        <div class="card">
-            <h2>📁 Archivos Generados</h2>
-            <div class="file-list" id="fileList">
-                <div class="file-item">
-                    <span class="name">dramas-completos-paginado.json</span>
-                    <span class="size">Esperando datos...</span>
-                </div>
-            </div>
-        </div>
     </div>
 
     <script>
-        // Configuración
+        // ============ CONFIGURACIÓN ============
         const API_URL = window.location.origin;
         let intervalEstado = null;
 
@@ -332,12 +369,19 @@
             fetch(`${API_URL}/api/estado-scraping`)
                 .then(res => res.json())
                 .then(data => {
+                    // Actualizar estadísticas
                     document.getElementById('totalDramas').textContent = data.totalDramas || 0;
                     if (data.ultimoScraping) {
                         document.getElementById('ultimoScraping').textContent = 
                             new Date(data.ultimoScraping).toLocaleString();
                     }
                     
+                    // GitHub status
+                    document.getElementById('githubRepo').textContent = data.repo || 'No configurado';
+                    document.getElementById('githubBadge').textContent = 
+                        data.githubConfigurado ? '🔐 GitHub: ✅' : '🔐 GitHub: ❌';
+                    
+                    // Badge de estado
                     const badge = document.getElementById('statusBadge');
                     if (data.enProgreso) {
                         badge.textContent = '🔄 SCRAPING...';
@@ -356,26 +400,41 @@
                 });
         }
 
+        function cargarStats() {
+            fetch(`${API_URL}/api/stats`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('totalEpisodios').textContent = data.totalEpisodios || 0;
+                    document.getElementById('conVideo').textContent = data.conVideo || 0;
+                    document.getElementById('sinVideo').textContent = data.sinVideo || 0;
+                })
+                .catch(err => {
+                    console.error('Error cargando stats:', err);
+                });
+        }
+
         function iniciarScraping() {
             if (document.getElementById('btnScrapear').disabled) return;
             
-            agregarLog('🚀 Iniciando scraping...', 'info');
+            const guardarGit = document.getElementById('guardarGitHub').checked;
+            agregarLog(`🚀 Iniciando scraping${guardarGit ? ' (con guardado en GitHub)' : ' (solo local)'}...`, 'info');
             document.getElementById('btnScrapear').disabled = true;
             document.getElementById('loadingBar').classList.add('active');
             
             fetch(`${API_URL}/api/scrapear`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ guardarEnGitHub: guardarGit })
             })
             .then(res => res.json())
             .then(data => {
                 agregarLog(`📊 ${data.mensaje}`, 'success');
                 
-                // Actualizar estado cada 5 segundos
+                // Actualizar estado cada 3 segundos
                 if (intervalEstado) clearInterval(intervalEstado);
                 intervalEstado = setInterval(() => {
                     actualizarEstado();
-                    // Verificar si terminó
+                    cargarStats();
                     fetch(`${API_URL}/api/estado-scraping`)
                         .then(r => r.json())
                         .then(d => {
@@ -384,11 +443,10 @@
                                 agregarLog('✅ Scraping completado', 'success');
                                 document.getElementById('btnScrapear').disabled = false;
                                 document.getElementById('loadingBar').classList.remove('active');
-                                // Recargar archivos
-                                cargarArchivos();
+                                cargarStats();
                             }
                         });
-                }, 5000);
+                }, 3000);
             })
             .catch(err => {
                 agregarLog(`❌ Error: ${err.message}`, 'error');
@@ -397,28 +455,26 @@
             });
         }
 
-        function cargarArchivos() {
-            // Verificar si existen archivos de datos
-            fetch(`${API_URL}/api/stats`)
-                .then(res => res.json())
-                .then(data => {
-                    const fileList = document.getElementById('fileList');
-                    const totalDramas = data.totalDramas || 0;
-                    const totalEpisodios = data.totalEpisodios || 0;
-                    document.getElementById('totalEpisodios').textContent = totalEpisodios;
-                    
-                    fileList.innerHTML = `
-                        <div class="file-item">
-                            <span class="name">📊 ${totalDramas} dramas scrapeados</span>
-                            <span class="size">${totalEpisodios} episodios</span>
-                        </div>
-                        <div class="file-item">
-                            <span class="name">📁 dramas-completos-paginado.json</span>
-                            <span class="size">${(totalDramas > 0) ? '✅ Disponible' : '⏳ Pendiente'}</span>
-                        </div>
-                    `;
+        function guardarGitHub() {
+            agregarLog('📤 Guardando datos en GitHub...', 'info');
+            fetch(`${API_URL}/api/guardar-github`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mensaje: `📊 Guardado manual desde el panel - ${new Date().toLocaleString()}`
                 })
-                .catch(() => {});
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    agregarLog(`✅ Datos guardados en GitHub: ${data.url || 'OK'}`, 'success');
+                } else {
+                    agregarLog(`❌ Error al guardar: ${data.error}`, 'error');
+                }
+            })
+            .catch(err => {
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+            });
         }
 
         function limpiarLogs() {
@@ -435,16 +491,16 @@
 
         agregarLog('🔧 Panel iniciado correctamente', 'info');
         actualizarEstado();
-        cargarArchivos();
+        cargarStats();
 
         // Actualizar estado cada 30 segundos
         setInterval(() => {
             actualizarEstado();
         }, 30000);
 
-        // Actualizar archivos cada 60 segundos
+        // Actualizar stats cada 60 segundos
         setInterval(() => {
-            cargarArchivos();
+            cargarStats();
         }, 60000);
     </script>
 </body>
