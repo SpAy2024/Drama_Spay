@@ -189,14 +189,15 @@ app.get('/api/stats', (req, res) => {
 });
 
 // Ruta principal
+// Ruta principal - ACTUALIZAR ESTA PARTE
 app.get('/', (req, res) => {
     res.json({
         nombre: 'Narto Drama API',
-        version: '1.0.0',
+        version: '2.0.0',  // <--- CAMBIAR A 2.0.0
         endpoints: {
             '/api/dramas': 'Lista todos los dramas (con paginación)',
-            '/api/dramas/:id': 'Obtener drama específico con episodios',
-            '/api/dramas/:dramaId/episodios/:numero': 'Obtener episodio específico',
+            '/api/dramas/:id': 'Obtener drama específico con episodios y videos',  // <--- ACTUALIZAR
+            '/api/dramas/:dramaId/episodios/:numero': 'Obtener episodio específico con video',  // <--- ACTUALIZAR
             '/api/etiquetas': 'Lista todas las etiquetas',
             '/api/etiquetas/:tag': 'Buscar dramas por etiqueta',
             '/api/recomendaciones/:id': 'Obtener recomendaciones',
