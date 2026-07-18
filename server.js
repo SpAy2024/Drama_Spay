@@ -24,7 +24,7 @@ try {
 } catch (error) {
     // Fallback a datos sin videos
     try {
-        const raw = fs.readFileSync('dramas-procesados.json', 'utf8');
+        const raw = fs.readFileSync('dramas-completos-paginado.json', 'utf8');
         dramasData = JSON.parse(raw);
         console.log(`⚠️ Cargados ${dramasData.length} dramas (sin videos)`);
     } catch (err) {
