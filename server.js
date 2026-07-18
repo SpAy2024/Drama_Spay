@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -13,14 +14,23 @@ app.use(express.json());
 // Servir archivos estáticos (posters)
 app.use('/posters', express.static(path.join(__dirname, 'posters')));
 
-// Cargar datos
+// Cargar datos (priorizar dramas-con-videos.json si existe)
 let dramasData = [];
 try {
-    const raw = fs.readFileSync('dramas-procesados.json', 'utf8');
+    // Intentar cargar con videos primero
+    const raw = fs.readFileSync('dramas-con-videos.json', 'utf8');
     dramasData = JSON.parse(raw);
-    console.log(`✅ Cargados ${dramasData.length} dramas`);
+    console.log(`✅ Cargados ${dramasData.length} dramas CON VIDEOS`);
 } catch (error) {
-    console.error('❌ Error cargando datos:', error.message);
+    // Fallback a datos sin videos
+    try {
+        const raw = fs.readFileSync('dramas-procesados.json', 'utf8');
+        dramasData = JSON.parse(raw);
+        console.log(`⚠️ Cargados ${dramasData.length} dramas (sin videos)`);
+    } catch (err) {
+        console.error('❌ Error cargando datos:', err.message);
+        dramasData = [];
+    }
 }
 
 // ============ ENDPOINTS DE LA API ============
@@ -63,24 +73,23 @@ app.get('/api/dramas', (req, res) => {
     });
 });
 
-// 2. Obtener un drama específico CON episodios
- app.get('/api/dramas/:id', (req, res) => {
+// 2. Obtener un drama específico CON episodios y videos
+app.get('/api/dramas/:id', (req, res) => {
     const drama = dramasData.find(d => d.id === req.params.id);
     
     if (!drama) {
         return res.status(404).json({ error: 'Drama no encontrado' });
     }
     
-    // Agregar URL completa del poster
+    // Agregar URL completa del poster y videos
     const response = {
         ...drama,
         poster: `${req.protocol}://${req.get('host')}/posters/${drama.id}.jpg`,
         episodios: drama.episodios.map(ep => ({
-            ...ep,
-            // Si tenemos videoUrl, la devolvemos
-            videoUrl: ep.videoUrl || null,
-            // URL de la página del episodio (por si acaso)
-            pageUrl: ep.url
+            numero: ep.numero,
+            titulo: ep.titulo,
+            url: ep.url,
+            videoUrl: ep.videoUrl || null
         }))
     };
     
@@ -107,10 +116,11 @@ app.get('/api/dramas/:dramaId/episodios/:numero', (req, res) => {
             numero: episodio.numero,
             titulo: episodio.titulo,
             url: episodio.url,
-            videoUrl: episodio.videoUrl || null, // URL directa del video
+            videoUrl: episodio.videoUrl || null
         }
     });
 });
+
 // 4. Buscar por etiquetas
 app.get('/api/etiquetas/:tag', (req, res) => {
     const tag = req.params.tag.toLowerCase();
@@ -143,7 +153,7 @@ app.get('/api/etiquetas', (req, res) => {
     });
 });
 
-// 6. Recomendaciones (basadas en etiquetas)
+// 6. Recomendaciones
 app.get('/api/recomendaciones/:id', (req, res) => {
     const drama = dramasData.find(d => d.id === req.params.id);
     
@@ -151,7 +161,6 @@ app.get('/api/recomendaciones/:id', (req, res) => {
         return res.status(404).json({ error: 'Drama no encontrado' });
     }
     
-    // Buscar dramas con etiquetas similares
     const recomendados = dramasData
         .filter(d => d.id !== drama.id)
         .map(d => {
@@ -189,15 +198,14 @@ app.get('/api/stats', (req, res) => {
 });
 
 // Ruta principal
-// Ruta principal - ACTUALIZAR ESTA PARTE
 app.get('/', (req, res) => {
     res.json({
         nombre: 'Narto Drama API',
-        version: '2.0.0',  // <--- CAMBIAR A 2.0.0
+        version: '2.0.0',
         endpoints: {
             '/api/dramas': 'Lista todos los dramas (con paginación)',
-            '/api/dramas/:id': 'Obtener drama específico con episodios y videos',  // <--- ACTUALIZAR
-            '/api/dramas/:dramaId/episodios/:numero': 'Obtener episodio específico con video',  // <--- ACTUALIZAR
+            '/api/dramas/:id': 'Obtener drama específico con episodios y videos',
+            '/api/dramas/:dramaId/episodios/:numero': 'Obtener episodio específico con video',
             '/api/etiquetas': 'Lista todas las etiquetas',
             '/api/etiquetas/:tag': 'Buscar dramas por etiqueta',
             '/api/recomendaciones/:id': 'Obtener recomendaciones',
