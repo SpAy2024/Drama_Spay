@@ -80,13 +80,6 @@
         .btn-success:hover {
             background: #16a34a;
         }
-        .btn-danger {
-            background: #ef4444;
-            color: #fff;
-        }
-        .btn-danger:hover {
-            background: #dc2626;
-        }
         .btn-secondary {
             background: #2a2a2a;
             color: #e0e0e0;
@@ -94,6 +87,20 @@
         }
         .btn-secondary:hover {
             background: #3a3a3a;
+        }
+        .btn-danger {
+            background: #ef4444;
+            color: #fff;
+        }
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+        .btn-purple {
+            background: #8b5cf6;
+            color: #fff;
+        }
+        .btn-purple:hover {
+            background: #7c3aed;
         }
         .stats-grid {
             display: grid;
@@ -240,6 +247,53 @@
         .github-status .text .repo {
             color: #60a5fa;
         }
+        .url-input-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .url-input-group input {
+            flex: 1;
+            min-width: 300px;
+            padding: 12px 16px;
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-family: 'Consolas', monospace;
+        }
+        .url-input-group input:focus {
+            outline: none;
+            border-color: #e50914;
+        }
+        .url-input-group input::placeholder {
+            color: #666;
+        }
+        .url-input-group .btn {
+            flex-shrink: 0;
+        }
+        .url-examples {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        .url-examples .example {
+            background: #2a2a2a;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Consolas', monospace;
+        }
+        .url-examples .example:hover {
+            background: #3a3a3a;
+            color: #fff;
+        }
         .checkbox-group {
             display: flex;
             align-items: center;
@@ -263,6 +317,13 @@
             }
             .stats-grid {
                 grid-template-columns: 1fr 1fr;
+            }
+            .url-input-group {
+                flex-direction: column;
+            }
+            .url-input-group input {
+                min-width: unset;
+                width: 100%;
             }
         }
     </style>
@@ -308,16 +369,38 @@
             </div>
         </div>
 
-        <!-- Acciones -->
+        <!-- Scraping por URL personalizada -->
         <div class="card">
-            <h2>⚡ Acciones</h2>
-            <div class="checkbox-group">
-                <input type="checkbox" id="guardarGitHub" checked>
-                <label for="guardarGitHub">Guardar automáticamente en GitHub después del scraping</label>
+            <h2>🔗 Scraping desde URL Personalizada</h2>
+            <p style="margin-bottom:8px;">Pega cualquier URL del catálogo de Narto Drama para scrapear dramas específicos.</p>
+            
+            <div class="url-input-group">
+                <input type="text" id="urlInput" placeholder="https://edge.narto-drama.com/?lang=es-ES&page=2&tab-provider=bilitv" value="https://edge.narto-drama.com/?lang=es-ES&page=2&tab-provider=bilitv">
+                <button class="btn btn-purple" id="btnScrapearURL" onclick="iniciarScrapingURL()">
+                    🚀 Scrapear desde URL
+                </button>
             </div>
+            
+            <div class="url-examples">
+                <span style="color:#666;font-size:12px;">Ejemplos:</span>
+                <span class="example" onclick="document.getElementById('urlInput').value='https://edge.narto-drama.com/?lang=es-ES&page=1&tab-provider=bilitv'">Página 1</span>
+                <span class="example" onclick="document.getElementById('urlInput').value='https://edge.narto-drama.com/?lang=es-ES&page=2&tab-provider=bilitv'">Página 2</span>
+                <span class="example" onclick="document.getElementById('urlInput').value='https://edge.narto-drama.com/?lang=es-ES&page=3&tab-provider=bilitv'">Página 3</span>
+                <span class="example" onclick="document.getElementById('urlInput').value='https://edge.narto-drama.com/?lang=es-ES&tab-provider=bilitv'">Todas (página 1)</span>
+            </div>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="guardarGitHubURL" checked>
+                <label for="guardarGitHubURL">Guardar automáticamente en GitHub</label>
+            </div>
+        </div>
+
+        <!-- Acciones rápidas -->
+        <div class="card">
+            <h2>⚡ Acciones Rápidas</h2>
             <div class="actions">
                 <button class="btn btn-primary" id="btnScrapear" onclick="iniciarScraping()">
-                    🚀 Iniciar Scraping
+                    🚀 Scraping Completo
                 </button>
                 <button class="btn btn-success" onclick="actualizarEstado()">
                     🔄 Actualizar Estado
@@ -369,30 +452,24 @@
             fetch(`${API_URL}/api/estado-scraping`)
                 .then(res => res.json())
                 .then(data => {
-                    // Actualizar estadísticas
                     document.getElementById('totalDramas').textContent = data.totalDramas || 0;
-                    if (data.ultimoScraping) {
-                        document.getElementById('ultimoScraping').textContent = 
-                            new Date(data.ultimoScraping).toLocaleString();
-                    }
-                    
-                    // GitHub status
                     document.getElementById('githubRepo').textContent = data.repo || 'No configurado';
                     document.getElementById('githubBadge').textContent = 
                         data.githubConfigurado ? '🔐 GitHub: ✅' : '🔐 GitHub: ❌';
                     
-                    // Badge de estado
                     const badge = document.getElementById('statusBadge');
                     if (data.enProgreso) {
                         badge.textContent = '🔄 SCRAPING...';
                         badge.className = 'status-badge running';
                         document.getElementById('loadingBar').classList.add('active');
                         document.getElementById('btnScrapear').disabled = true;
+                        document.getElementById('btnScrapearURL').disabled = true;
                     } else {
                         badge.textContent = '🟢 IDLE';
                         badge.className = 'status-badge idle';
                         document.getElementById('loadingBar').classList.remove('active');
                         document.getElementById('btnScrapear').disabled = false;
+                        document.getElementById('btnScrapearURL').disabled = false;
                     }
                 })
                 .catch(err => {
@@ -413,11 +490,63 @@
                 });
         }
 
+        function iniciarScrapingURL() {
+            if (document.getElementById('btnScrapearURL').disabled) return;
+            
+            const url = document.getElementById('urlInput').value.trim();
+            if (!url) {
+                agregarLog('❌ Por favor, ingresa una URL válida', 'error');
+                return;
+            }
+            
+            if (!url.includes('edge.narto-drama.com')) {
+                agregarLog('❌ URL inválida. Debe ser de edge.narto-drama.com', 'error');
+                return;
+            }
+
+            const guardarGit = document.getElementById('guardarGitHubURL').checked;
+            agregarLog(`🚀 Iniciando scraping desde URL: ${url}`, 'info');
+            document.getElementById('btnScrapearURL').disabled = true;
+            document.getElementById('loadingBar').classList.add('active');
+            
+            fetch(`${API_URL}/api/scrapear-url`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, guardarEnGitHub: guardarGit })
+            })
+            .then(res => res.json())
+            .then(data => {
+                agregarLog(`📊 ${data.mensaje}`, 'success');
+                
+                if (intervalEstado) clearInterval(intervalEstado);
+                intervalEstado = setInterval(() => {
+                    actualizarEstado();
+                    cargarStats();
+                    fetch(`${API_URL}/api/estado-scraping`)
+                        .then(r => r.json())
+                        .then(d => {
+                            if (!d.enProgreso) {
+                                clearInterval(intervalEstado);
+                                agregarLog('✅ Scraping completado desde URL personalizada', 'success');
+                                document.getElementById('btnScrapearURL').disabled = false;
+                                document.getElementById('loadingBar').classList.remove('active');
+                                cargarStats();
+                            }
+                        });
+                }, 3000);
+            })
+            .catch(err => {
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+                document.getElementById('btnScrapearURL').disabled = false;
+                document.getElementById('loadingBar').classList.remove('active');
+            });
+        }
+
         function iniciarScraping() {
             if (document.getElementById('btnScrapear').disabled) return;
             
-            const guardarGit = document.getElementById('guardarGitHub').checked;
-            agregarLog(`🚀 Iniciando scraping${guardarGit ? ' (con guardado en GitHub)' : ' (solo local)'}...`, 'info');
+            const guardarGit = document.getElementById('guardarGitHub')?.checked !== false;
+            agregarLog(`🚀 Iniciando scraping completo...`, 'info');
             document.getElementById('btnScrapear').disabled = true;
             document.getElementById('loadingBar').classList.add('active');
             
@@ -430,7 +559,6 @@
             .then(data => {
                 agregarLog(`📊 ${data.mensaje}`, 'success');
                 
-                // Actualizar estado cada 3 segundos
                 if (intervalEstado) clearInterval(intervalEstado);
                 intervalEstado = setInterval(() => {
                     actualizarEstado();
@@ -493,15 +621,20 @@
         actualizarEstado();
         cargarStats();
 
-        // Actualizar estado cada 30 segundos
         setInterval(() => {
             actualizarEstado();
         }, 30000);
 
-        // Actualizar stats cada 60 segundos
         setInterval(() => {
             cargarStats();
         }, 60000);
+
+        // Enter en el campo de URL
+        document.getElementById('urlInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                iniciarScrapingURL();
+            }
+        });
     </script>
 </body>
 </html>

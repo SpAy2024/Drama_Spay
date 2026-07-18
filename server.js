@@ -1,4 +1,4 @@
-// server.js - VERSIÓN CON GITHUB API
+// server.js - VERSIÓN COMPLETA CON PANEL Y GITHUB
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -37,10 +37,179 @@ function esperar(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ============ ESTADO DEL SCRAPING ============
+
+let estadoScraping = {
+    enProgreso: false,
+    ultimoScraping: null,
+    totalDramas: 0,
+    logs: []
+};
+
+function agregarLog(mensaje, tipo = 'info') {
+    const entry = {
+        tiempo: new Date().toISOString(),
+        mensaje,
+        tipo
+    };
+    estadoScraping.logs.unshift(entry);
+    if (estadoScraping.logs.length > 100) {
+        estadoScraping.logs = estadoScraping.logs.slice(0, 100);
+    }
+    console.log(`[${tipo}] ${mensaje}`);
+}
+
+// ============ CARGAR DATOS EXISTENTES ============
+
+function cargarDatos() {
+    try {
+        const archivosPosibles = [
+            'dramas-completos-paginado.json',
+            'dramas-con-videos.json',
+            'dramas-procesados.json'
+        ];
+        for (const archivo of archivosPosibles) {
+            try {
+                const raw = fs.readFileSync(archivo, 'utf8');
+                const data = JSON.parse(raw);
+                console.log(`✅ Cargados ${data.length} dramas desde ${archivo}`);
+                estadoScraping.totalDramas = data.length;
+                return data;
+            } catch (e) {}
+        }
+        return [];
+    } catch (error) {
+        console.error('❌ Error cargando datos:', error.message);
+        return [];
+    }
+}
+
+let dramasData = cargarDatos();
+
 // ============ SCRAPING ENGINE ============
 
+// 1. Scraping desde URL personalizada
+async function scrapearDesdeURL(urlPersonalizada) {
+    console.log(`🚀 Scrapeando desde URL: ${urlPersonalizada}`);
+    const browser = await puppeteer.launch({ 
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    try {
+        const page = await browser.newPage();
+        const todosLosDramas = [];
+        
+        await page.goto(urlPersonalizada, { waitUntil: 'networkidle2', timeout: 60000 });
+        await esperar(3000);
+        
+        const html = await page.content();
+        const $ = cheerio.load(html);
+        
+        $('a[href*="/detail/watch/"]').each((i, el) => {
+            const href = $(el).attr('href');
+            const titulo = $(el).text().trim();
+            if (href && titulo && titulo.length > 3) {
+                const urlCompleta = href.startsWith('http') ? href : `${CONFIG.baseUrl}${href}`;
+                todosLosDramas.push({ titulo, url: urlCompleta });
+            }
+        });
+        
+        // Eliminar duplicados
+        const unicos = [];
+        const urlsVistas = new Set();
+        for (const drama of todosLosDramas) {
+            if (!urlsVistas.has(drama.url)) {
+                urlsVistas.add(drama.url);
+                unicos.push(drama);
+            }
+        }
+        
+        console.log(`📊 Encontrados ${unicos.length} dramas en la URL personalizada`);
+        
+        // Procesar cada drama (extraer videos)
+        const resultados = [];
+        const limite = Math.min(10, unicos.length);
+        
+        for (let i = 0; i < limite; i++) {
+            const drama = unicos[i];
+            console.log(`📺 [${i+1}/${limite}] ${drama.titulo}`);
+            
+            try {
+                const pageEp = await browser.newPage();
+                await pageEp.goto(drama.url, { waitUntil: 'networkidle2', timeout: 60000 });
+                await esperar(2000);
+                
+                const urlEpisodio = await pageEp.evaluate(() => {
+                    const links = document.querySelectorAll('a[href*="/detail/watch/"]');
+                    for (const link of links) {
+                        const texto = link.textContent || '';
+                        const href = link.getAttribute('href');
+                        if (texto.includes('Episodio 1') || 
+                            texto.includes('Ver episodio 1') || 
+                            texto.includes('Primer episodio') ||
+                            texto.includes('Start Watching Episode 1')) {
+                            return href;
+                        }
+                    }
+                    return null;
+                });
+                await pageEp.close();
+                
+                if (urlEpisodio) {
+                    const urlEp = urlEpisodio.startsWith('http') ? urlEpisodio : `${CONFIG.baseUrl}${urlEpisodio}`;
+                    
+                    const pageVideo = await browser.newPage();
+                    await pageVideo.goto(urlEp, { waitUntil: 'networkidle2', timeout: 60000 });
+                    await esperar(3000);
+                    
+                    const videoUrl = await pageVideo.evaluate(() => {
+                        const video = document.querySelector('video#player');
+                        if (video && video.src && video.src.startsWith('http')) {
+                            return video.src;
+                        }
+                        const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+                        for (const script of scripts) {
+                            try {
+                                const data = JSON.parse(script.textContent);
+                                if (data && data.contentUrl) return data.contentUrl;
+                            } catch (e) {}
+                        }
+                        return null;
+                    });
+                    await pageVideo.close();
+                    
+                    resultados.push({
+                        ...drama,
+                        primerEpisodio: urlEp,
+                        videoUrl: videoUrl,
+                        fechaScraping: new Date().toISOString(),
+                        fuente: urlPersonalizada
+                    });
+                    
+                    console.log(`   ${videoUrl ? '✅ Video encontrado' : '⚠️ Sin video'}`);
+                } else {
+                    resultados.push({ ...drama, error: 'No se encontró episodio 1' });
+                    console.log(`   ❌ No se encontró episodio 1`);
+                }
+            } catch (error) {
+                console.log(`   ❌ Error: ${error.message}`);
+                resultados.push({ ...drama, error: error.message });
+            }
+            
+            await esperar(CONFIG.pausaEntrePeticiones);
+        }
+        
+        return resultados;
+        
+    } finally {
+        await browser.close();
+    }
+}
+
+// 2. Scraping completo (todas las páginas)
 async function scrapearTodosLosDramas() {
-    console.log('🚀 Iniciando scraping...');
+    console.log('🚀 Iniciando scraping completo...');
     const browser = await puppeteer.launch({ 
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -52,7 +221,6 @@ async function scrapearTodosLosDramas() {
         let paginaActual = 1;
         let tienePaginaSiguiente = true;
 
-        // 1. Obtener todos los dramas
         while (tienePaginaSiguiente && paginaActual <= CONFIG.maxPaginas) {
             const url = `${CONFIG.catalogoUrl}&page=${paginaActual}`;
             console.log(`📄 Scrapeando página ${paginaActual}...`);
@@ -97,7 +265,7 @@ async function scrapearTodosLosDramas() {
         
         console.log(`📊 Total: ${todosLosDramas.length} dramas`);
         
-        // 2. Procesar cada drama (extraer videos)
+        // Procesar cada drama (extraer videos)
         const resultados = [];
         const limite = Math.min(10, todosLosDramas.length);
         
@@ -188,7 +356,6 @@ async function guardarEnGitHub(contenido, nombreArchivo = 'dramas-completos-pagi
         const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/${nombreArchivo}`;
         const contenidoBase64 = Buffer.from(JSON.stringify(contenido, null, 2)).toString('base64');
         
-        // 1. Obtener el SHA del archivo actual (si existe)
         let sha = null;
         try {
             const response = await fetch(url, {
@@ -205,7 +372,6 @@ async function guardarEnGitHub(contenido, nombreArchivo = 'dramas-completos-pagi
             console.log('ℹ️ Archivo no existe en GitHub, se creará uno nuevo');
         }
 
-        // 2. Subir/actualizar el archivo
         const body = {
             message: mensaje,
             content: contenidoBase64,
@@ -247,63 +413,74 @@ async function guardarDatosLocalmente(datos) {
     return { success: true, archivo };
 }
 
-// ============ ESTADO DEL SCRAPING ============
-
-let estadoScraping = {
-    enProgreso: false,
-    ultimoScraping: null,
-    totalDramas: 0,
-    logs: []
-};
-
-function agregarLog(mensaje, tipo = 'info') {
-    const entry = {
-        tiempo: new Date().toISOString(),
-        mensaje,
-        tipo
-    };
-    estadoScraping.logs.unshift(entry);
-    if (estadoScraping.logs.length > 100) {
-        estadoScraping.logs = estadoScraping.logs.slice(0, 100);
-    }
-    console.log(`[${tipo}] ${mensaje}`);
-}
-
-// ============ CARGAR DATOS EXISTENTES ============
-
-function cargarDatos() {
-    try {
-        const archivosPosibles = [
-            'dramas-completos-paginado.json',
-            'dramas-con-videos.json',
-            'dramas-procesados.json'
-        ];
-        for (const archivo of archivosPosibles) {
-            try {
-                const raw = fs.readFileSync(archivo, 'utf8');
-                const data = JSON.parse(raw);
-                console.log(`✅ Cargados ${data.length} dramas desde ${archivo}`);
-                estadoScraping.totalDramas = data.length;
-                return data;
-            } catch (e) {}
-        }
-        return [];
-    } catch (error) {
-        console.error('❌ Error cargando datos:', error.message);
-        return [];
-    }
-}
-
-let dramasData = cargarDatos();
-
-// ============ ENDPOINTS ============
+// ============ ENDPOINTS DE LA API ============
 
 // 1. Panel web
 app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'panel.html'));
 });
 
-// 2. Iniciar scraping y guardar en GitHub
+// 2. Scraping desde URL personalizada
+app.post('/api/scrapear-url', async (req, res) => {
+    const { url, guardarEnGitHub = true } = req.body;
+    
+    if (!url || !url.includes('edge.narto-drama.com')) {
+        return res.status(400).json({ 
+            status: 'error', 
+            mensaje: 'URL inválida. Debe ser de edge.narto-drama.com' 
+        });
+    }
+
+    if (estadoScraping.enProgreso) {
+        return res.status(409).json({ 
+            status: 'error', 
+            mensaje: 'Ya hay un scraping en progreso' 
+        });
+    }
+
+    estadoScraping.enProgreso = true;
+    agregarLog(`🚀 Iniciando scraping desde URL: ${url}`, 'info');
+    
+    res.json({ 
+        status: 'iniciado', 
+        mensaje: 'El scraping ha comenzado desde la URL personalizada.' 
+    });
+
+    setTimeout(async () => {
+        try {
+            const resultados = await scrapearDesdeURL(url);
+            
+            estadoScraping.totalDramas = resultados.length;
+            estadoScraping.ultimoScraping = new Date().toISOString();
+            agregarLog(`✅ Scraping completado: ${resultados.length} dramas desde URL personalizada`, 'success');
+
+            await guardarDatosLocalmente(resultados);
+            
+            if (guardarEnGitHub && GITHUB_TOKEN) {
+                agregarLog('📤 Subiendo datos a GitHub...', 'info');
+                const resultadoGit = await guardarEnGitHub(
+                    resultados, 
+                    CONFIG.archivoSalida,
+                    `📊 Scraping desde URL personalizada: ${resultados.length} dramas`
+                );
+                if (resultadoGit.success) {
+                    agregarLog(`✅ Datos subidos a GitHub: ${resultadoGit.url || 'OK'}`, 'success');
+                } else {
+                    agregarLog(`⚠️ Error al subir a GitHub: ${resultadoGit.error}`, 'error');
+                }
+            }
+
+            dramasData = resultados;
+            estadoScraping.enProgreso = false;
+
+        } catch (error) {
+            agregarLog(`❌ Error en scraping: ${error.message}`, 'error');
+            estadoScraping.enProgreso = false;
+        }
+    }, 1000);
+});
+
+// 3. Scraping completo
 app.post('/api/scrapear', async (req, res) => {
     if (estadoScraping.enProgreso) {
         return res.status(409).json({ 
@@ -314,14 +491,13 @@ app.post('/api/scrapear', async (req, res) => {
 
     const { guardarEnGitHub: guardarEnGit = true } = req.body;
     estadoScraping.enProgreso = true;
-    agregarLog('🚀 Iniciando scraping...', 'info');
+    agregarLog('🚀 Iniciando scraping completo...', 'info');
     
     res.json({ 
         status: 'iniciado', 
         mensaje: 'El scraping ha comenzado. Revisa los logs para ver el progreso.' 
     });
 
-    // Ejecutar scraping en segundo plano
     setTimeout(async () => {
         try {
             const resultados = await scrapearTodosLosDramas();
@@ -329,10 +505,8 @@ app.post('/api/scrapear', async (req, res) => {
             estadoScraping.ultimoScraping = new Date().toISOString();
             agregarLog(`✅ Scraping completado: ${resultados.length} dramas`, 'success');
 
-            // Guardar localmente
             await guardarDatosLocalmente(resultados);
             
-            // Guardar en GitHub si está habilitado y hay token
             if (guardarEnGit && GITHUB_TOKEN) {
                 agregarLog('📤 Subiendo datos a GitHub...', 'info');
                 const resultadoGit = await guardarEnGitHub(
@@ -345,11 +519,8 @@ app.post('/api/scrapear', async (req, res) => {
                 } else {
                     agregarLog(`⚠️ Error al subir a GitHub: ${resultadoGit.error}`, 'error');
                 }
-            } else if (guardarEnGit && !GITHUB_TOKEN) {
-                agregarLog('⚠️ GITHUB_TOKEN no configurado. Solo se guardó localmente.', 'error');
             }
 
-            // Actualizar datos en memoria
             dramasData = resultados;
             estadoScraping.enProgreso = false;
 
@@ -360,7 +531,7 @@ app.post('/api/scrapear', async (req, res) => {
     }, 1000);
 });
 
-// 3. Estado del scraping
+// 4. Estado del scraping
 app.get('/api/estado-scraping', (req, res) => {
     res.json({
         enProgreso: estadoScraping.enProgreso,
@@ -373,7 +544,7 @@ app.get('/api/estado-scraping', (req, res) => {
     });
 });
 
-// 4. Guardar manualmente en GitHub
+// 5. Guardar manualmente en GitHub
 app.post('/api/guardar-github', async (req, res) => {
     try {
         const { archivo = CONFIG.archivoSalida, datos = dramasData, mensaje = '📊 Actualización manual de datos' } = req.body;
@@ -393,7 +564,7 @@ app.post('/api/guardar-github', async (req, res) => {
     }
 });
 
-// 5. Obtener datos actuales
+// 6. Obtener datos actuales
 app.get('/api/datos', (req, res) => {
     res.json({
         total: dramasData.length,
@@ -402,7 +573,7 @@ app.get('/api/datos', (req, res) => {
     });
 });
 
-// 6. Endpoints de la API (resumidos)
+// 7. Listar todos los dramas
 app.get('/api/dramas', (req, res) => {
     const { limit = 50, offset = 0, search = '' } = req.query;
     let resultados = dramasData;
@@ -430,6 +601,7 @@ app.get('/api/dramas', (req, res) => {
     });
 });
 
+// 8. Obtener un drama específico
 app.get('/api/dramas/:id', (req, res) => {
     const drama = dramasData.find(d => d.titulo === req.params.id || d.id === req.params.id);
     if (!drama) {
@@ -438,19 +610,21 @@ app.get('/api/dramas/:id', (req, res) => {
     res.json(drama);
 });
 
+// 9. Estadísticas
 app.get('/api/stats', (req, res) => {
     const totalEpisodios = dramasData.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
     const conVideo = dramasData.filter(d => d.videoUrl).length;
+    const sinVideo = dramasData.length - conVideo;
     res.json({
         totalDramas: dramasData.length,
         totalEpisodios: totalEpisodios,
         conVideo: conVideo,
-        sinVideo: dramasData.length - conVideo,
+        sinVideo: sinVideo,
         ultimaActualizacion: estadoScraping.ultimoScraping || new Date().toISOString()
     });
 });
 
-// 7. Ruta principal
+// 10. Ruta principal
 app.get('/', (req, res) => {
     res.json({
         nombre: 'Narto Drama API',
@@ -464,7 +638,8 @@ app.get('/', (req, res) => {
             '/api/dramas': 'Lista todos los dramas',
             '/api/dramas/:id': 'Obtener drama específico',
             '/api/stats': 'Estadísticas',
-            '/api/scrapear': 'Iniciar scraping (POST)',
+            '/api/scrapear': 'Iniciar scraping completo (POST)',
+            '/api/scrapear-url': 'Scrapear desde URL personalizada (POST)',
             '/api/estado-scraping': 'Estado del scraping',
             '/api/guardar-github': 'Guardar en GitHub (POST)',
             '/api/datos': 'Obtener todos los datos'
@@ -472,10 +647,12 @@ app.get('/', (req, res) => {
     });
 });
 
-// Iniciar servidor
+// ============ INICIAR SERVIDOR ============
+
 app.listen(PORT, () => {
     console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
     console.log(`📊 Panel: http://localhost:${PORT}/panel`);
     console.log(`📚 API: http://localhost:${PORT}/api/dramas`);
     console.log(`🔐 GitHub: ${GITHUB_TOKEN ? '✅ Configurado' : '❌ No configurado'}`);
+    console.log(`📁 Repo: ${GITHUB_REPO}`);
 });
