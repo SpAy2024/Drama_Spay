@@ -410,40 +410,25 @@
         <div class="subtitle">Gestiona el scraping de dramas y actualiza la API automáticamente</div>
 
         <!-- Estado -->
-        <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-                <h2>📊 Estado del Sistema</h2>
-                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                    <span class="status-badge idle" id="statusBadge">🟢 IDLE</span>
-                    <span id="githubBadge" style="font-size:12px; color:#666;">🔐 GitHub: ⏳</span>
-                </div>
-            </div>
-            <div class="stats-grid">
-                <div class="stat-item">
-                    <div class="num" id="totalDramas">0</div>
-                    <div class="label">Dramas</div>
-                </div>
-                <div class="stat-item">
-                    <div class="num" id="totalEpisodios">0</div>
-                    <div class="label">Episodios</div>
-                </div>
-                <div class="stat-item">
-                    <div class="num green" id="conVideo">0</div>
-                    <div class="label">Con Video</div>
-                </div>
-                <div class="stat-item">
-                    <div class="num yellow" id="sinVideo">0</div>
-                    <div class="label">Sin Video</div>
-                </div>
-            </div>
-            <div class="github-status" id="githubStatus">
-                <span class="icon">🔐</span>
-                <span class="text">GitHub: <span class="repo" id="githubRepo">Cargando...</span></span>
-            </div>
-            <div class="loading-bar" id="loadingBar">
-                <div class="fill"></div>
-            </div>
+        <!-- En panel.html, después de la sección de URL personalizada -->
+<div class="card">
+    <h2>🎬 Scrapear Drama Específico</h2>
+    <p style="margin-bottom:8px;">Ingresa la URL de un drama para extraer TODOS sus episodios.</p>
+    
+    <div class="url-input-group">
+        <input type="text" id="dramaUrlInput" 
+               placeholder="https://edge.narto-drama.com/detail/watch/istri-ceo-membuka-kedoknya?lang=id-ID" 
+               value="https://edge.narto-drama.com/detail/watch/istri-ceo-membuka-kedoknya?lang=id-ID">
+        <button class="btn btn-primary" id="btnScrapearDrama" onclick="iniciarScrapingDrama()">
+            🎬 Extraer Episodios
+        </button>
+    </div>
+    
+    <div id="dramaResultado" style="margin-top: 12px; display: none;">
+        <div style="background: #2a2a2a; border-radius: 8px; padding: 16px;" id="dramaInfo">
         </div>
+    </div>
+</div>
 
         <div class="actions">
     <button class="btn btn-success" onclick="guardarFirebase()">
@@ -510,6 +495,101 @@
         let intervalResultados = null;
 
         // ============ FUNCIONES ============
+
+      // panel.html - Función para scrapear drama específico
+function iniciarScrapingDrama() {
+    const url = document.getElementById('dramaUrlInput').value.trim();
+    const btn = document.getElementById('btnScrapearDrama');
+    
+    if (!url) {
+        agregarLog('❌ Por favor, ingresa una URL de drama', 'error');
+        return;
+    }
+    
+    if (!url.includes('edge.narto-drama.com/detail/watch/')) {
+        agregarLog('❌ URL inválida. Debe ser una URL de detalle de drama.', 'error');
+        return;
+    }
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Scrapeando...';
+    agregarLog(`🎬 Scrapeando drama: ${url}`, 'info');
+    
+    const resultadoDiv = document.getElementById('dramaResultado');
+    const infoDiv = document.getElementById('dramaInfo');
+    resultadoDiv.style.display = 'block';
+    infoDiv.innerHTML = `
+        <div style="color: #fbbf24; text-align: center; padding: 20px;">
+            <span class="spinner"></span> Extrayendo episodios...
+        </div>
+    `;
+    
+    fetch(`${API_URL}/api/scrapear-drama`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+    })
+    .then(res => res.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.textContent = '🎬 Extraer Episodios';
+        
+        if (data.success) {
+            const drama = data.drama;
+            const totalConVideo = drama.episodios.filter(e => e.videoUrl).length;
+            
+            agregarLog(`✅ Drama procesado: ${drama.titulo} - ${drama.episodios.length} episodios`, 'success');
+            
+            infoDiv.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+                    <div>
+                        <h3 style="color: #fff; font-size: 18px;">${drama.titulo}</h3>
+                        <div style="color: #888; font-size: 13px;">
+                            📺 ${drama.totalEpisodios} episodios | 🎬 ${totalConVideo} con video
+                        </div>
+                    </div>
+                    <span class="status-badge done">✅ Completado</span>
+                </div>
+                ${drama.sinopsis ? `<div style="color: #aaa; font-size: 13px; margin-bottom: 12px;">${drama.sinopsis}</div>` : ''}
+                <div class="episodios" style="max-height: 300px; overflow-y: auto;">
+                    ${drama.episodios.map(ep => `
+                        <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}" 
+                              title="${ep.titulo}">
+                            #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
+                        </span>
+                    `).join('')}
+                </div>
+                <div style="margin-top: 12px; font-size: 12px; color: #666;">
+                    Última actualización: ${new Date().toLocaleString()}
+                </div>
+            `;
+            
+            // Actualizar el listado general
+            cargarResultados();
+            cargarStats();
+            
+        } else {
+            agregarLog(`❌ Error: ${data.error || 'No se pudieron extraer los episodios'}`, 'error');
+            infoDiv.innerHTML = `
+                <div style="color: #ef4444; text-align: center; padding: 20px;">
+                    ❌ ${data.error || 'Error al scrapear el drama'}
+                </div>
+            `;
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.textContent = '🎬 Extraer Episodios';
+        agregarLog(`❌ Error: ${err.message}`, 'error');
+        infoDiv.innerHTML = `
+            <div style="color: #ef4444; text-align: center; padding: 20px;">
+                ❌ ${err.message}
+            </div>
+        `;
+    });
+}
+
+
 
         function agregarLog(mensaje, nivel = 'info') {
             const container = document.getElementById('logContainer');
