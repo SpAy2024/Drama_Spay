@@ -229,7 +229,9 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
     try {
         console.log(`📄 Cargando drama: ${urlDrama}`);
         await page.goto(urlDrama, { waitUntil: 'networkidle2', timeout: 60000 });
-        await esperar(3000);
+        
+        // Esperar a que cargue el contenido dinámico
+        await esperar(5000);
         
         // Extraer título y sinopsis
         const metadata = await page.evaluate(() => {
@@ -239,31 +241,43 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
             return { titulo, sinopsis };
         });
         
-        // EXTRAER TODOS LOS EPISODIOS - MÉTODO MEJORADO
+        // EXTRAER EPISODIOS - MÉTODO MEJORADO
         const episodios = await page.evaluate(() => {
             const episodios = [];
             const seen = new Set();
             
-            // 1. Buscar enlaces en la página de detalle
+            // 1. Buscar TODOS los enlaces que contienen "/detail/watch/"
             const links = document.querySelectorAll('a[href*="/detail/watch/"]');
             
             for (const link of links) {
                 const href = link.getAttribute('href');
                 const texto = link.textContent?.trim() || '';
                 
-                // Intentar extraer número de episodio
+                // Filtrar enlaces no válidos
+                if (texto.includes('Más dramas') || 
+                    texto.includes('Continuar') ||
+                    texto.includes('Seleccionar') ||
+                    texto.includes('Idioma') ||
+                    texto.includes('Compartir') ||
+                    texto.includes('Facebook') ||
+                    texto.includes('Twitter')) {
+                    continue;
+                }
+                
+                // Extraer número de episodio
                 let numero = null;
                 
-                // Buscar patrones comunes
+                // Buscar patrones de número
                 const patterns = [
                     /Episodio\s*(\d+)/i,
                     /EP\s*(\d+)/i,
                     /Episode\s*(\d+)/i,
                     /E(\d+)/i,
                     /#(\d+)/,
-                    /(\d+)\s*\/\s*\d+/,  // 1/48
+                    /(\d+)\s*\/\s*\d+/,
                     /Ver\s*episodio\s*(\d+)/i,
-                    /Start\s*Watching\s*Episode\s*(\d+)/i
+                    /Start\s*Watching\s*Episode\s*(\d+)/i,
+                    /[\?&]episodio[=:]\s*(\d+)/i
                 ];
                 
                 for (const pattern of patterns) {
@@ -274,32 +288,43 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                     }
                 }
                 
-                // Si no tiene número, usar el índice
+                // Buscar en la URL
                 if (!numero) {
-                    // Buscar en la URL
-                    const urlMatch = href.match(/\/\d+$/);
+                    const urlMatch = href.match(/\/(\d+)(?:\?|$)/);
                     if (urlMatch) {
-                        numero = parseInt(urlMatch[0].replace('/', ''));
+                        numero = parseInt(urlMatch[1]);
                     }
                 }
                 
-                if (!numero && texto.includes('Episodio')) {
-                    const numMatch = texto.match(/\d+/);
-                    if (numMatch) numero = parseInt(numMatch[0]);
+                // Si no tiene número, asignar uno secuencial
+                if (!numero) {
+                    numero = episodios.length + 1;
                 }
                 
-                if (href && !seen.has(href) && 
-                    !texto.includes('Más dramas') && 
-                    !texto.includes('Continuar') &&
-                    !texto.includes('Seleccionar') &&
-                    !texto.includes('Idioma') &&
-                    href.includes('/detail/watch/')) {
-                    
+                const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
+                
+                if (!seen.has(urlCompleta)) {
+                    seen.add(urlCompleta);
+                    episodios.push({
+                        numero: numero,
+                        titulo: texto || `Episodio ${numero}`,
+                        url: urlCompleta,
+                        videoUrl: null
+                    });
+                }
+            }
+            
+            // 2. Buscar en el reproductor/player
+            const playerLinks = document.querySelectorAll('.player-episodes a, .episode-list a, .episode-selector a');
+            for (const link of playerLinks) {
+                const href = link.getAttribute('href');
+                const texto = link.textContent?.trim() || '';
+                if (href && href.includes('/detail/watch/') && !seen.has(href)) {
                     seen.add(href);
                     const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
-                    
+                    const numMatch = texto.match(/\d+/);
                     episodios.push({
-                        numero: numero || (episodios.length + 1),
+                        numero: numMatch ? parseInt(numMatch[0]) : (episodios.length + 1),
                         titulo: texto || `Episodio ${episodios.length + 1}`,
                         url: urlCompleta,
                         videoUrl: null
@@ -307,56 +332,111 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                 }
             }
             
-            // 2. Si no encontró episodios, buscar en el selector de episodios
+            // 3. Buscar en el historial de reproducción
+            const historyLinks = document.querySelectorAll('.history-item a, .last-watch-item a');
+            for (const link of historyLinks) {
+                const href = link.getAttribute('href');
+                const texto = link.textContent?.trim() || '';
+                if (href && href.includes('/detail/watch/') && !seen.has(href)) {
+                    seen.add(href);
+                    const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
+                    const numMatch = texto.match(/\d+/);
+                    episodios.push({
+                        numero: numMatch ? parseInt(numMatch[0]) : (episodios.length + 1),
+                        titulo: texto || `Episodio ${episodios.length + 1}`,
+                        url: urlCompleta,
+                        videoUrl: null
+                    });
+                }
+            }
+            
+            // 4. Si no hay episodios, buscar en el menú desplegable
             if (episodios.length === 0) {
-                // Buscar en elementos con clase "episode"
-                document.querySelectorAll('.episode-item, .episode, .ep-item, [data-episode]').forEach(el => {
-                    const link = el.querySelector('a[href*="/detail/watch/"]');
-                    if (link) {
+                const select = document.querySelector('select option[value*="/detail/watch/"]');
+                if (select) {
+                    const href = select.getAttribute('value');
+                    const texto = select.textContent?.trim() || '';
+                    if (href && href.includes('/detail/watch/')) {
+                        const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
+                        const numMatch = texto.match(/\d+/);
+                        episodios.push({
+                            numero: numMatch ? parseInt(numMatch[0]) : 1,
+                            titulo: texto || 'Episodio 1',
+                            url: urlCompleta,
+                            videoUrl: null
+                        });
+                    }
+                }
+            }
+            
+            // Ordenar por número
+            episodios.sort((a, b) => a.numero - b.numero);
+            
+            // Eliminar duplicados por número
+            const unique = [];
+            const seenNums = new Set();
+            for (const ep of episodios) {
+                if (!seenNums.has(ep.numero)) {
+                    seenNums.add(ep.numero);
+                    unique.push(ep);
+                }
+            }
+            
+            return unique;
+        });
+        
+        console.log(`   📺 Encontrados ${episodios.length} episodios`);
+        
+        // Si solo encontró 1 episodio, intentar extraer más desde la página del episodio 1
+        if (episodios.length === 1) {
+            console.log(`   🔄 Intentando extraer más episodios desde la página del episodio 1...`);
+            try {
+                const epPage = await browser.newPage();
+                await epPage.goto(episodios[0].url, { waitUntil: 'networkidle2', timeout: 60000 });
+                await esperar(3000);
+                
+                const moreEpisodes = await epPage.evaluate(() => {
+                    const eps = [];
+                    const links = document.querySelectorAll('a[href*="/detail/watch/"]');
+                    for (const link of links) {
                         const href = link.getAttribute('href');
                         const texto = link.textContent?.trim() || '';
-                        const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
-                        
-                        if (!seen.has(href)) {
-                            seen.add(href);
+                        if (href && href.includes('/detail/watch/') && 
+                            !texto.includes('Más dramas') && 
+                            !texto.includes('Continuar')) {
+                            const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
                             const numMatch = texto.match(/\d+/);
-                            episodios.push({
-                                numero: numMatch ? parseInt(numMatch[0]) : (episodios.length + 1),
-                                titulo: texto || `Episodio ${episodios.length + 1}`,
+                            eps.push({
+                                numero: numMatch ? parseInt(numMatch[0]) : (eps.length + 1),
+                                titulo: texto || `Episodio ${eps.length + 1}`,
                                 url: urlCompleta,
                                 videoUrl: null
                             });
                         }
                     }
+                    return eps;
                 });
-            }
-            
-            // 3. Si aún no hay episodios, buscar en el historial o reproductor
-            if (episodios.length === 0) {
-                // Buscar enlaces en el historial
-                document.querySelectorAll('.history-item a, .last-watch-item a').forEach(link => {
-                    const href = link.getAttribute('href');
-                    if (href && href.includes('/detail/watch/') && !seen.has(href)) {
-                        seen.add(href);
-                        const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
-                        const texto = link.textContent?.trim() || '';
-                        const numMatch = texto.match(/\d+/);
-                        episodios.push({
-                            numero: numMatch ? parseInt(numMatch[0]) : (episodios.length + 1),
-                            titulo: texto || `Episodio ${episodios.length + 1}`,
-                            url: urlCompleta,
-                            videoUrl: null
-                        });
+                
+                await epPage.close();
+                
+                // Combinar episodios
+                const allEpisodios = [...episodios, ...moreEpisodes];
+                const unique = [];
+                const seenNums = new Set();
+                for (const ep of allEpisodios) {
+                    if (!seenNums.has(ep.numero)) {
+                        seenNums.add(ep.numero);
+                        unique.push(ep);
                     }
-                });
+                }
+                episodios.length = 0;
+                episodios.push(...unique.sort((a, b) => a.numero - b.numero));
+                
+                console.log(`   📺 Total después de búsqueda adicional: ${episodios.length} episodios`);
+            } catch (e) {
+                console.log(`   ⚠️ No se pudieron extraer más episodios: ${e.message}`);
             }
-            
-            // Ordenar por número
-            episodios.sort((a, b) => a.numero - b.numero);
-            return episodios;
-        });
-        
-        console.log(`   📺 Encontrados ${episodios.length} episodios para extraer`);
+        }
         
         // Extraer video de cada episodio
         let conVideo = 0;
@@ -369,32 +449,18 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                 await esperar(3000);
                 
                 const videoUrl = await pageVideo.evaluate(() => {
-                    // Buscar en elemento video
                     const video = document.querySelector('video#player, video[src]');
                     if (video && video.src && video.src.startsWith('http')) {
                         return video.src;
                     }
-                    
-                    // Buscar en JSON-LD
                     const scripts = document.querySelectorAll('script[type="application/ld+json"]');
                     for (const script of scripts) {
                         try {
                             const data = JSON.parse(script.textContent);
-                            if (data && data.contentUrl) {
-                                return data.contentUrl;
-                            }
-                            if (data && data.embedUrl) {
-                                return data.embedUrl;
-                            }
+                            if (data && data.contentUrl) return data.contentUrl;
+                            if (data && data.embedUrl) return data.embedUrl;
                         } catch (e) {}
                     }
-                    
-                    // Buscar en iframes
-                    const iframe = document.querySelector('iframe[src*="video"], iframe[src*="embed"]');
-                    if (iframe && iframe.src) {
-                        return iframe.src;
-                    }
-                    
                     return null;
                 });
                 
@@ -414,7 +480,7 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
             await esperar(1500);
         }
         
-        console.log(`   📊 Total: ${conVideo}/${episodios.length} con video`);
+        console.log(`   📊 ${conVideo}/${episodios.length} con video`);
         
         return {
             titulo: metadata.titulo || 'Sin título',
@@ -435,7 +501,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
         await page.close();
     }
 }
-
 // ============ SCRAPING DESDE URL PERSONALIZADA ============
 
 async function scrapearDesdeURL(urlPersonalizada) {
