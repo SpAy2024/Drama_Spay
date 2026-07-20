@@ -383,6 +383,23 @@
             font-size: 13px;
             margin-top: 8px;
         }
+        #dramaResultado {
+            margin-top: 12px;
+            display: none;
+        }
+        #dramaResultado .drama-info {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        #dramaResultado .episodios-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
         @media (max-width: 640px) {
             h1 {
                 font-size: 22px;
@@ -410,34 +427,75 @@
         <div class="subtitle">Gestiona el scraping de dramas y actualiza la API automáticamente</div>
 
         <!-- Estado -->
-        <!-- En panel.html, después de la sección de URL personalizada -->
-<div class="card">
-    <h2>🎬 Scrapear Drama Específico</h2>
-    <p style="margin-bottom:8px;">Ingresa la URL de un drama para extraer TODOS sus episodios.</p>
-    
-    <div class="url-input-group">
-        <input type="text" id="dramaUrlInput" 
-               placeholder="https://edge.narto-drama.com/detail/watch/istri-ceo-membuka-kedoknya?lang=id-ID" 
-               value="https://edge.narto-drama.com/detail/watch/istri-ceo-membuka-kedoknya?lang=id-ID">
-        <button class="btn btn-primary" id="btnScrapearDrama" onclick="iniciarScrapingDrama()">
-            🎬 Extraer Episodios
-        </button>
-    </div>
-    
-    <div id="dramaResultado" style="margin-top: 12px; display: none;">
-        <div style="background: #2a2a2a; border-radius: 8px; padding: 16px;" id="dramaInfo">
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                <h2>📊 Estado del Sistema</h2>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <span class="status-badge idle" id="statusBadge">🟢 IDLE</span>
+                    <span id="githubBadge" style="font-size:12px; color:#666;">🔐 GitHub: ⏳</span>
+                </div>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="num" id="totalDramas">0</div>
+                    <div class="label">Dramas</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num" id="totalEpisodios">0</div>
+                    <div class="label">Episodios</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num green" id="conVideo">0</div>
+                    <div class="label">Con Video</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num yellow" id="sinVideo">0</div>
+                    <div class="label">Sin Video</div>
+                </div>
+            </div>
+            <div class="github-status" id="githubStatus">
+                <span class="icon">🔐</span>
+                <span class="text">GitHub: <span class="repo" id="githubRepo">Cargando...</span></span>
+            </div>
+            <div class="loading-bar" id="loadingBar">
+                <div class="fill"></div>
+            </div>
         </div>
-    </div>
-</div>
 
         <div class="actions">
-    <button class="btn btn-success" onclick="guardarFirebase()">
-        🔥 Guardar en Firebase
-    </button>
-    <button class="btn btn-secondary" onclick="cargarFirebase()">
-        📥 Cargar desde Firebase
-    </button>
-</div>
+            <button class="btn btn-success" onclick="guardarFirebase()">
+                🔥 Guardar en Firebase
+            </button>
+            <button class="btn btn-secondary" onclick="cargarFirebase()">
+                📥 Cargar desde Firebase
+            </button>
+            <button class="btn btn-secondary" onclick="cargarResultados()">
+                🔄 Actualizar
+            </button>
+        </div>
+
+        <!-- Scrapear Drama Específico -->
+        <div class="card">
+            <h2>🎬 Scrapear Drama Específico</h2>
+            <p style="margin-bottom:8px;">Ingresa la URL de un drama para extraer TODOS sus episodios.</p>
+            
+            <div class="url-input-group">
+                <input type="text" id="dramaUrlInput" 
+                       placeholder="https://edge.narto-drama.com/detail/watch/istri-ceo-membuka-kedoknya?lang=id-ID" 
+                       value="https://edge.narto-drama.com/detail/watch/istri-ceo-membuka-kedoknya?lang=id-ID">
+                <button class="btn btn-primary" id="btnScrapearDrama" onclick="iniciarScrapingDrama()">
+                    🎬 Extraer Episodios
+                </button>
+            </div>
+            
+            <div id="dramaResultado">
+                <div class="drama-info" id="dramaInfo">
+                    <div style="color: #666; text-align: center; padding: 20px;">
+                        Esperando scrapeo...
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Scraping por URL personalizada -->
         <div class="card">
@@ -496,103 +554,9 @@
 
         // ============ FUNCIONES ============
 
-      // panel.html - Función para scrapear drama específico
-function iniciarScrapingDrama() {
-    const url = document.getElementById('dramaUrlInput').value.trim();
-    const btn = document.getElementById('btnScrapearDrama');
-    
-    if (!url) {
-        agregarLog('❌ Por favor, ingresa una URL de drama', 'error');
-        return;
-    }
-    
-    if (!url.includes('edge.narto-drama.com/detail/watch/')) {
-        agregarLog('❌ URL inválida. Debe ser una URL de detalle de drama.', 'error');
-        return;
-    }
-    
-    btn.disabled = true;
-    btn.textContent = '⏳ Scrapeando...';
-    agregarLog(`🎬 Scrapeando drama: ${url}`, 'info');
-    
-    const resultadoDiv = document.getElementById('dramaResultado');
-    const infoDiv = document.getElementById('dramaInfo');
-    resultadoDiv.style.display = 'block';
-    infoDiv.innerHTML = `
-        <div style="color: #fbbf24; text-align: center; padding: 20px;">
-            <span class="spinner"></span> Extrayendo episodios...
-        </div>
-    `;
-    
-    fetch(`${API_URL}/api/scrapear-drama`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
-    })
-    .then(res => res.json())
-    .then(data => {
-        btn.disabled = false;
-        btn.textContent = '🎬 Extraer Episodios';
-        
-        if (data.success) {
-            const drama = data.drama;
-            const totalConVideo = drama.episodios.filter(e => e.videoUrl).length;
-            
-            agregarLog(`✅ Drama procesado: ${drama.titulo} - ${drama.episodios.length} episodios`, 'success');
-            
-            infoDiv.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
-                    <div>
-                        <h3 style="color: #fff; font-size: 18px;">${drama.titulo}</h3>
-                        <div style="color: #888; font-size: 13px;">
-                            📺 ${drama.totalEpisodios} episodios | 🎬 ${totalConVideo} con video
-                        </div>
-                    </div>
-                    <span class="status-badge done">✅ Completado</span>
-                </div>
-                ${drama.sinopsis ? `<div style="color: #aaa; font-size: 13px; margin-bottom: 12px;">${drama.sinopsis}</div>` : ''}
-                <div class="episodios" style="max-height: 300px; overflow-y: auto;">
-                    ${drama.episodios.map(ep => `
-                        <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}" 
-                              title="${ep.titulo}">
-                            #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
-                        </span>
-                    `).join('')}
-                </div>
-                <div style="margin-top: 12px; font-size: 12px; color: #666;">
-                    Última actualización: ${new Date().toLocaleString()}
-                </div>
-            `;
-            
-            // Actualizar el listado general
-            cargarResultados();
-            cargarStats();
-            
-        } else {
-            agregarLog(`❌ Error: ${data.error || 'No se pudieron extraer los episodios'}`, 'error');
-            infoDiv.innerHTML = `
-                <div style="color: #ef4444; text-align: center; padding: 20px;">
-                    ❌ ${data.error || 'Error al scrapear el drama'}
-                </div>
-            `;
-        }
-    })
-    .catch(err => {
-        btn.disabled = false;
-        btn.textContent = '🎬 Extraer Episodios';
-        agregarLog(`❌ Error: ${err.message}`, 'error');
-        infoDiv.innerHTML = `
-            <div style="color: #ef4444; text-align: center; padding: 20px;">
-                ❌ ${err.message}
-            </div>
-        `;
-    });
-}
-
-
-
         function agregarLog(mensaje, nivel = 'info') {
             const container = document.getElementById('logContainer');
+            if (!container) return;
             const entry = document.createElement('div');
             entry.className = 'log-entry';
             const time = new Date().toLocaleTimeString();
@@ -608,28 +572,43 @@ function iniciarScrapingDrama() {
 
         function actualizarEstado() {
             fetch(`${API_URL}/api/estado-scraping`)
-                .then(res => res.json())
+                .then(res => {
+                    if (!res.ok) throw new Error('Error en la respuesta');
+                    return res.json();
+                })
                 .then(data => {
-                    document.getElementById('totalDramas').textContent = data.totalDramas || 0;
-                    document.getElementById('githubRepo').textContent = data.repo || 'No configurado';
-                    document.getElementById('githubBadge').textContent = 
+                    const totalDramas = document.getElementById('totalDramas');
+                    const githubRepo = document.getElementById('githubRepo');
+                    const githubBadge = document.getElementById('githubBadge');
+                    const statusBadge = document.getElementById('statusBadge');
+                    const loadingBar = document.getElementById('loadingBar');
+                    const btnScrapearURL = document.getElementById('btnScrapearURL');
+                    const btnScrapearDrama = document.getElementById('btnScrapearDrama');
+                    
+                    if (totalDramas) totalDramas.textContent = data.totalDramas || 0;
+                    if (githubRepo) githubRepo.textContent = data.repo || 'No configurado';
+                    if (githubBadge) githubBadge.textContent = 
                         data.githubConfigurado ? '🔐 GitHub: ✅' : '🔐 GitHub: ❌';
                     
-                    const badge = document.getElementById('statusBadge');
-                    if (data.enProgreso) {
-                        badge.textContent = '🔄 SCRAPING...';
-                        badge.className = 'status-badge running';
-                        document.getElementById('loadingBar').classList.add('active');
-                        document.getElementById('btnScrapearURL').disabled = true;
-                    } else {
-                        badge.textContent = '🟢 IDLE';
-                        badge.className = 'status-badge idle';
-                        document.getElementById('loadingBar').classList.remove('active');
-                        document.getElementById('btnScrapearURL').disabled = false;
+                    if (statusBadge) {
+                        if (data.enProgreso) {
+                            statusBadge.textContent = '🔄 SCRAPING...';
+                            statusBadge.className = 'status-badge running';
+                        } else {
+                            statusBadge.textContent = '🟢 IDLE';
+                            statusBadge.className = 'status-badge idle';
+                        }
                     }
+                    
+                    if (loadingBar) {
+                        loadingBar.classList.toggle('active', data.enProgreso);
+                    }
+                    
+                    if (btnScrapearURL) btnScrapearURL.disabled = data.enProgreso;
+                    if (btnScrapearDrama) btnScrapearDrama.disabled = data.enProgreso;
                 })
                 .catch(err => {
-                    agregarLog(`❌ Error al obtener estado: ${err.message}`, 'error');
+                    console.error('Error al obtener estado:', err);
                 });
         }
 
@@ -637,79 +616,185 @@ function iniciarScrapingDrama() {
             fetch(`${API_URL}/api/stats`)
                 .then(res => res.json())
                 .then(data => {
-                    document.getElementById('totalEpisodios').textContent = data.totalEpisodios || 0;
-                    document.getElementById('conVideo').textContent = data.episodiosConVideo || 0;
-                    document.getElementById('sinVideo').textContent = (data.totalEpisodios || 0) - (data.episodiosConVideo || 0);
+                    const totalEpisodios = document.getElementById('totalEpisodios');
+                    const conVideo = document.getElementById('conVideo');
+                    const sinVideo = document.getElementById('sinVideo');
+                    
+                    if (totalEpisodios) totalEpisodios.textContent = data.totalEpisodios || 0;
+                    if (conVideo) conVideo.textContent = data.episodiosConVideo || 0;
+                    if (sinVideo) sinVideo.textContent = (data.totalEpisodios || 0) - (data.episodiosConVideo || 0);
                 })
                 .catch(err => {
                     console.error('Error cargando stats:', err);
                 });
         }
 
-       // panel.html - Actualizar función cargarResultados
-function cargarResultados() {
-    fetch(`${API_URL}/api/datos`)
-        .then(res => res.json())
-        .then(data => {
-            const container = document.getElementById('resultsContainer');
-            const count = document.getElementById('resultsCount');
-            
-            if (data.datos && data.datos.length > 0) {
-                const totalEpisodios = data.datos.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
-                const totalConVideo = data.datos.reduce((sum, d) => {
-                    return sum + (d.episodios?.filter(e => e.videoUrl).length || 0);
-                }, 0);
-                
-                count.textContent = `📊 ${data.datos.length} dramas | 📺 ${totalEpisodios} episodios | 🎬 ${totalConVideo} con video`;
-                
-                let html = '';
-                data.datos.forEach((drama, index) => {
-                    const epCount = drama.episodios?.length || 0;
-                    const conVideo = drama.episodios?.filter(e => e.videoUrl).length || 0;
+        function cargarResultados() {
+            fetch(`${API_URL}/api/datos`)
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('resultsContainer');
+                    const count = document.getElementById('resultsCount');
                     
-                    html += `
-                        <div class="result-item" style="border-left: 3px solid ${epCount > 0 ? '#22c55e' : '#ef4444'};">
-                            <div class="header">
-                                <span class="titulo">${index + 1}. ${drama.titulo || 'Sin título'}</span>
-                                <span style="font-size:12px; color:#888;">
-                                    📺 ${epCount} eps | 🎬 ${conVideo} con video
-                                </span>
-                            </div>
-                            ${epCount > 0 ? `
-                                <div class="episodios">
-                                    ${drama.episodios.slice(0, 20).map(ep => `
-                                        <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}" 
-                                              title="${ep.titulo || 'Episodio ' + ep.numero}">
-                                            #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
+                    if (!container || !count) return;
+                    
+                    if (data.datos && data.datos.length > 0) {
+                        const totalEpisodios = data.datos.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
+                        const totalConVideo = data.datos.reduce((sum, d) => {
+                            return sum + (d.episodios?.filter(e => e.videoUrl).length || 0);
+                        }, 0);
+                        
+                        count.textContent = `📊 ${data.datos.length} dramas | 📺 ${totalEpisodios} episodios | 🎬 ${totalConVideo} con video`;
+                        
+                        let html = '';
+                        data.datos.forEach((drama, index) => {
+                            const epCount = drama.episodios?.length || 0;
+                            const conVideo = drama.episodios?.filter(e => e.videoUrl).length || 0;
+                            
+                            html += `
+                                <div class="result-item" style="border-left: 3px solid ${epCount > 0 ? '#22c55e' : '#ef4444'};">
+                                    <div class="header">
+                                        <span class="titulo">${index + 1}. ${drama.titulo || 'Sin título'}</span>
+                                        <span style="font-size:12px; color:#888;">
+                                            📺 ${epCount} eps | 🎬 ${conVideo} con video
                                         </span>
-                                    `).join('')}
-                                    ${epCount > 20 ? `<span style="color:#666; font-size:11px; padding:2px 8px;">+${epCount - 20} más</span>` : ''}
+                                    </div>
+                                    ${epCount > 0 ? `
+                                        <div class="episodios">
+                                            ${drama.episodios.slice(0, 20).map(ep => `
+                                                <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}" 
+                                                      title="${ep.titulo || 'Episodio ' + ep.numero}">
+                                                    #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
+                                                </span>
+                                            `).join('')}
+                                            ${epCount > 20 ? `<span style="color:#666; font-size:11px; padding:2px 8px;">+${epCount - 20} más</span>` : ''}
+                                        </div>
+                                    ` : (drama.error ? `
+                                        <div style="color:#ef4444; font-size:12px; margin-top:4px;">
+                                            ❌ ${drama.error}
+                                        </div>
+                                    ` : '')}
                                 </div>
-                            ` : (drama.error ? `
-                                <div style="color:#ef4444; font-size:12px; margin-top:4px;">
-                                    ❌ ${drama.error}
-                                </div>
-                            ` : '')}
-                        </div>
-                    `;
+                            `;
+                        });
+                        container.innerHTML = html;
+                    } else {
+                        count.textContent = '📊 0 dramas scrapeados';
+                        container.innerHTML = `
+                            <div style="color:#666; text-align:center; padding:20px;">
+                                No hay resultados aún. Inicia un scraping para ver los dramas.
+                            </div>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    console.error('Error cargando resultados:', err);
                 });
-                container.innerHTML = html;
-            } else {
-                count.textContent = '📊 0 dramas scrapeados';
-                container.innerHTML = `
-                    <div style="color:#666; text-align:center; padding:20px;">
-                        No hay resultados aún. Inicia un scraping para ver los dramas.
+        }
+
+        function iniciarScrapingDrama() {
+            const btn = document.getElementById('btnScrapearDrama');
+            if (!btn || btn.disabled) return;
+            
+            const url = document.getElementById('dramaUrlInput').value.trim();
+            if (!url) {
+                agregarLog('❌ Por favor, ingresa una URL de drama', 'error');
+                return;
+            }
+            
+            if (!url.includes('edge.narto-drama.com/detail/watch/')) {
+                agregarLog('❌ URL inválida. Debe ser una URL de detalle de drama.', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Scrapeando...';
+            agregarLog(`🎬 Scrapeando drama: ${url}`, 'info');
+            
+            const resultadoDiv = document.getElementById('dramaResultado');
+            const infoDiv = document.getElementById('dramaInfo');
+            if (resultadoDiv) resultadoDiv.style.display = 'block';
+            if (infoDiv) {
+                infoDiv.innerHTML = `
+                    <div style="color: #fbbf24; text-align: center; padding: 20px;">
+                        <span class="spinner"></span> Extrayendo episodios...
                     </div>
                 `;
             }
-        })
-        .catch(err => {
-            console.error('Error cargando resultados:', err);
-        });
-}
+            
+            fetch(`${API_URL}/api/scrapear-drama`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            })
+            .then(res => res.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = '🎬 Extraer Episodios';
+                
+                if (data.success) {
+                    const drama = data.drama;
+                    const totalConVideo = drama.episodios?.filter(e => e.videoUrl).length || 0;
+                    
+                    agregarLog(`✅ Drama procesado: ${drama.titulo} - ${drama.episodios?.length || 0} episodios`, 'success');
+                    
+                    if (infoDiv) {
+                        infoDiv.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+                                <div>
+                                    <h3 style="color: #fff; font-size: 18px;">${drama.titulo}</h3>
+                                    <div style="color: #888; font-size: 13px;">
+                                        📺 ${drama.totalEpisodios || drama.episodios?.length || 0} episodios | 🎬 ${totalConVideo} con video
+                                    </div>
+                                </div>
+                                <span class="status-badge done">✅ Completado</span>
+                            </div>
+                            ${drama.sinopsis ? `<div style="color: #aaa; font-size: 13px; margin-bottom: 12px;">${drama.sinopsis}</div>` : ''}
+                            <div class="episodios-grid">
+                                ${(drama.episodios || []).map(ep => `
+                                    <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}" 
+                                          title="${ep.titulo || 'Episodio ' + ep.numero}">
+                                        #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
+                                    </span>
+                                `).join('')}
+                            </div>
+                            <div style="margin-top: 12px; font-size: 12px; color: #666;">
+                                Última actualización: ${new Date().toLocaleString()}
+                            </div>
+                        `;
+                    }
+                    
+                    cargarResultados();
+                    cargarStats();
+                    
+                } else {
+                    agregarLog(`❌ Error: ${data.error || 'No se pudieron extraer los episodios'}`, 'error');
+                    if (infoDiv) {
+                        infoDiv.innerHTML = `
+                            <div style="color: #ef4444; text-align: center; padding: 20px;">
+                                ❌ ${data.error || 'Error al scrapear el drama'}
+                            </div>
+                        `;
+                    }
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.textContent = '🎬 Extraer Episodios';
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+                if (infoDiv) {
+                    infoDiv.innerHTML = `
+                        <div style="color: #ef4444; text-align: center; padding: 20px;">
+                            ❌ ${err.message}
+                        </div>
+                    `;
+                }
+            });
+        }
 
         function iniciarScrapingURL() {
-            if (document.getElementById('btnScrapearURL').disabled) return;
+            const btn = document.getElementById('btnScrapearURL');
+            if (!btn || btn.disabled) return;
             
             const url = document.getElementById('urlInput').value.trim();
             if (!url) {
@@ -724,15 +809,19 @@ function cargarResultados() {
 
             const guardarGit = document.getElementById('guardarGitHubURL').checked;
             agregarLog(`🚀 Iniciando scraping desde URL: ${url}`, 'info');
-            document.getElementById('btnScrapearURL').disabled = true;
-            document.getElementById('loadingBar').classList.add('active');
+            btn.disabled = true;
+            btn.textContent = '⏳ Scrapeando...';
             
-            document.getElementById('resultsContainer').innerHTML = `
-                <div style="color:#fbbf24; text-align:center; padding:20px;">
-                    ⏳ Scrapeando... <span class="spinner"></span>
-                </div>
-            `;
-            document.getElementById('resultsCount').textContent = '⏳ Scrapeando...';
+            const container = document.getElementById('resultsContainer');
+            const count = document.getElementById('resultsCount');
+            if (container) {
+                container.innerHTML = `
+                    <div style="color:#fbbf24; text-align:center; padding:20px;">
+                        ⏳ Scrapeando... <span class="spinner"></span>
+                    </div>
+                `;
+            }
+            if (count) count.textContent = '⏳ Scrapeando...';
             
             fetch(`${API_URL}/api/scrapear-url`, {
                 method: 'POST',
@@ -756,8 +845,12 @@ function cargarResultados() {
                                 clearInterval(intervalEstado);
                                 clearInterval(intervalResultados);
                                 agregarLog('✅ Scraping completado', 'success');
-                                document.getElementById('btnScrapearURL').disabled = false;
-                                document.getElementById('loadingBar').classList.remove('active');
+                                if (btn) {
+                                    btn.disabled = false;
+                                    btn.textContent = '🚀 Scrapear desde URL';
+                                }
+                                const loadingBar = document.getElementById('loadingBar');
+                                if (loadingBar) loadingBar.classList.remove('active');
                                 cargarStats();
                                 cargarResultados();
                             }
@@ -768,81 +861,86 @@ function cargarResultados() {
             })
             .catch(err => {
                 agregarLog(`❌ Error: ${err.message}`, 'error');
-                document.getElementById('btnScrapearURL').disabled = false;
-                document.getElementById('loadingBar').classList.remove('active');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Scrapear desde URL';
+                }
+                const loadingBar = document.getElementById('loadingBar');
+                if (loadingBar) loadingBar.classList.remove('active');
             });
+        }
+
+        function guardarFirebase() {
+            agregarLog('🔥 Guardando datos en Firebase...', 'info');
+            fetch(`${API_URL}/api/guardar-firebase`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ruta: 'dramas',
+                    datos: null
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    agregarLog(`✅ Datos guardados en Firebase: ${data.url}`, 'success');
+                } else {
+                    agregarLog(`❌ Error al guardar en Firebase: ${data.error}`, 'error');
+                }
+            })
+            .catch(err => {
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+            });
+        }
+
+        function cargarFirebase() {
+            agregarLog('📥 Cargando datos desde Firebase...', 'info');
+            fetch(`${API_URL}/api/firebase`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        agregarLog(`✅ Datos cargados desde Firebase: ${data.data?.length || 0} dramas`, 'success');
+                        cargarResultados();
+                        cargarStats();
+                    } else {
+                        agregarLog(`❌ Error al cargar desde Firebase: ${data.error}`, 'error');
+                    }
+                })
+                .catch(err => {
+                    agregarLog(`❌ Error: ${err.message}`, 'error');
+                });
         }
 
         // ============ INICIO ============
 
-        agregarLog('🔧 Panel iniciado correctamente', 'info');
-        actualizarEstado();
-        cargarStats();
-        cargarResultados();
-
-        setInterval(() => {
+        document.addEventListener('DOMContentLoaded', function() {
+            agregarLog('🔧 Panel iniciado correctamente', 'info');
             actualizarEstado();
-        }, 30000);
-
-        setInterval(() => {
             cargarStats();
             cargarResultados();
-        }, 10000);
 
-        document.getElementById('urlInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                iniciarScrapingURL();
-            }
-        });
-
-
-
-   
-// ============ FUNCIONES DE FIREBASE ============
-
-function guardarFirebase() {
-    agregarLog('🔥 Guardando datos en Firebase...', 'info');
-    fetch(`${API_URL}/api/guardar-firebase`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            ruta: 'dramas',
-            datos: null // Usa los datos actuales
-        })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            agregarLog(`✅ Datos guardados en Firebase: ${data.url}`, 'success');
-        } else {
-            agregarLog(`❌ Error al guardar en Firebase: ${data.error}`, 'error');
-        }
-    })
-    .catch(err => {
-        agregarLog(`❌ Error: ${err.message}`, 'error');
-    });
-}
-
-function cargarFirebase() {
-    agregarLog('📥 Cargando datos desde Firebase...', 'info');
-    fetch(`${API_URL}/api/firebase`)
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                agregarLog(`✅ Datos cargados desde Firebase: ${data.data?.length || 0} dramas`, 'success');
-                // Actualizar la interfaz
-                cargarResultados();
+            // Actualizar cada 30 segundos
+            setInterval(actualizarEstado, 30000);
+            setInterval(() => {
                 cargarStats();
-            } else {
-                agregarLog(`❌ Error al cargar desde Firebase: ${data.error}`, 'error');
+                cargarResultados();
+            }, 10000);
+
+            // Enter en los inputs
+            const urlInput = document.getElementById('urlInput');
+            if (urlInput) {
+                urlInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') iniciarScrapingURL();
+                });
             }
-        })
-        .catch(err => {
-            agregarLog(`❌ Error: ${err.message}`, 'error');
+            
+            const dramaUrlInput = document.getElementById('dramaUrlInput');
+            if (dramaUrlInput) {
+                dramaUrlInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') iniciarScrapingDrama();
+                });
+            }
         });
-}
-
-
     </script>
 </body>
 </html>
