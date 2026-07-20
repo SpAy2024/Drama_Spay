@@ -1,4 +1,4 @@
-// server.js - VERSIÓN CON FIREBASE
+// server.js - VERSIÓN CON FIREBASE Y PUPPETEER CONFIGURADO PARA RENDER
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -40,6 +40,61 @@ function esperar(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ============ CONFIGURACIÓN DE PUPPETEER PARA RENDER ============
+
+async function crearBrowser() {
+    // Intentar diferentes rutas de Chrome
+    const chromePaths = [
+        process.env.CHROME_PATH,
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/opt/render/.cache/puppeteer/chrome/linux-121.0.6167.85/chrome-linux64/chrome',
+        '/opt/render/.cache/puppeteer/chrome/linux-121.0.6167.85/chrome-linux64/chrome'
+    ].filter(Boolean);
+    
+    let executablePath = undefined;
+    for (const chromePath of chromePaths) {
+        try {
+            if (fs.existsSync(chromePath)) {
+                executablePath = chromePath;
+                console.log(`✅ Chrome encontrado en: ${chromePath}`);
+                break;
+            }
+        } catch (e) {
+            // continuar
+        }
+    }
+    
+    return await puppeteer.launch({ 
+        headless: true,
+        executablePath: executablePath,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--window-size=1920,1080'
+        ]
+    });
+}
+
+// Función para verificar si Chrome está instalado
+async function verificarChrome() {
+    try {
+        const browser = await crearBrowser();
+        const version = await browser.version();
+        await browser.close();
+        console.log(`✅ Chrome versión: ${version}`);
+        return true;
+    } catch (error) {
+        console.error('❌ Error verificando Chrome:', error.message);
+        return false;
+    }
+}
+
 // ============ ESTADO DEL SCRAPING ============
 
 let estadoScraping = {
@@ -64,7 +119,6 @@ function agregarLog(mensaje, tipo = 'info') {
 
 // ============ FUNCIONES DE FIREBASE ============
 
-// server.js - Función Firebase corregida
 async function guardarEnFirebase(datos, ruta = 'dramas') {
     if (!FIREBASE_URL) {
         console.error('❌ FIREBASE_URL no configurado');
@@ -72,11 +126,9 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
     }
 
     try {
-        // Limpiar URL (eliminar doble slash)
-        let baseUrl = FIREBASE_URL.replace(/\/+$/, ''); // Eliminar slash final
+        let baseUrl = FIREBASE_URL.replace(/\/+$/, '');
         let url = `${baseUrl}/${ruta}.json`;
         
-        // Si tenemos secret, usarlo como auth
         if (FIREBASE_SECRET) {
             url = `${url}?auth=${FIREBASE_SECRET}`;
         }
@@ -96,7 +148,6 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
             const errorText = await response.text();
             console.error(`❌ Firebase error ${response.status}: ${errorText}`);
             
-            // Si es 401, intentar sin autenticación
             if (response.status === 401 && FIREBASE_SECRET) {
                 console.log('🔄 Intentando sin autenticación...');
                 const fallbackUrl = `${baseUrl}/${ruta}.json`;
@@ -222,8 +273,6 @@ let dramasData = cargarDatos();
 
 // ============ FUNCIÓN PARA EXTRAER TODOS LOS EPISODIOS ============
 
-// server.js - Función mejorada para extraer episodios
-// server.js - Función mejorada para extraer TODOS los episodios
 async function extraerTodosLosEpisodios(browser, urlDrama) {
     const page = await browser.newPage();
     
@@ -231,10 +280,8 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
         console.log(`📄 Cargando drama: ${urlDrama}`);
         await page.goto(urlDrama, { waitUntil: 'networkidle2', timeout: 60000 });
         
-        // Esperar a que cargue el contenido dinámico
         await esperar(5000);
         
-        // Extraer título y sinopsis desde la página
         const metadata = await page.evaluate(() => {
             const titulo = document.querySelector('h1.desktop-title')?.textContent?.trim() || 
                           document.querySelector('h1')?.textContent?.trim() || 
@@ -245,13 +292,10 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
             return { titulo, sinopsis };
         });
         
-        // EXTRAER EPISODIOS - MÉTODO MEJORADO PARA NARTO DRAMA
         const episodios = await page.evaluate(() => {
             const episodios = [];
             const seen = new Set();
             
-            // 🔥 MÉTODO PRINCIPAL: Buscar en la barra lateral de episodios
-            // Narto Drama muestra TODOS los episodios en #left-episodes-list
             const episodeList = document.querySelector('#left-episodes-list');
             
             if (episodeList) {
@@ -279,7 +323,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                 }
             }
             
-            // 🔥 MÉTODO SECUNDARIO: Buscar en el selector de episodios del reproductor
             const playerEpisodes = document.querySelectorAll('.episode-strip .ep-item, .ep-list .ep-item');
             for (const link of playerEpisodes) {
                 const href = link.getAttribute('href');
@@ -302,7 +345,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                 }
             }
             
-            // 🔥 MÉTODO TERCERO: Buscar en el contenedor desktop de episodios
             const desktopEpisodes = document.querySelectorAll('.desktop-sidebar-left .left-episode-item');
             for (const link of desktopEpisodes) {
                 const href = link.getAttribute('href');
@@ -324,10 +366,8 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                 }
             }
             
-            // Ordenar por número de episodio
             episodios.sort((a, b) => a.numero - b.numero);
             
-            // Eliminar duplicados
             const unique = [];
             const seenNums = new Set();
             for (const ep of episodios) {
@@ -342,11 +382,9 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
         
         console.log(`   📺 Encontrados ${episodios.length} episodios en la barra lateral`);
         
-        // Si no se encontraron episodios, intentar extraer desde la URL base
         if (episodios.length === 0) {
             console.log(`   🔄 Intentando extraer desde la URL base...`);
             
-            // Intentar con la URL sin número de episodio
             const baseUrl = urlDrama.replace(/\/\d+(?:\?|$)/, '');
             if (baseUrl !== urlDrama) {
                 try {
@@ -394,7 +432,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
             }
         }
         
-        // Extraer video de cada episodio
         let conVideo = 0;
         for (const ep of episodios) {
             try {
@@ -405,22 +442,18 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                 await esperar(3000);
                 
                 const videoUrl = await pageVideo.evaluate(() => {
-                    // Buscar el video principal
                     const video = document.querySelector('video#player');
                     if (video && video.src && video.src.startsWith('http')) {
                         return video.src;
                     }
                     
-                    // Buscar en el script de configuración
                     const scripts = document.querySelectorAll('script');
                     for (const script of scripts) {
                         const text = script.textContent || '';
-                        // Buscar episodeItemsRaw que contiene play_url
                         const match = text.match(/const episodeItemsRaw = (\[.*?\]);/s);
                         if (match) {
                             try {
                                 const data = JSON.parse(match[1]);
-                                // Buscar el episodio actual
                                 const currentEp = data.find(e => e.route_episode_number === parseInt(
                                     window.location.pathname.match(/\/(\d+)/)?.[1] || '0'
                                 ));
@@ -430,7 +463,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                             } catch (e) {}
                         }
                         
-                        // Buscar en JSON-LD
                         if (text.includes('contentUrl')) {
                             try {
                                 const data = JSON.parse(text);
@@ -439,7 +471,6 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
                         }
                     }
                     
-                    // Buscar en el atributo data-src
                     const videoData = document.querySelector('video[data-src]');
                     if (videoData) {
                         return videoData.getAttribute('data-src');
@@ -490,10 +521,7 @@ async function extraerTodosLosEpisodios(browser, urlDrama) {
 
 async function scrapearDesdeURL(urlPersonalizada) {
     console.log(`🚀 Scrapeando desde URL: ${urlPersonalizada}`);
-    const browser = await puppeteer.launch({ 
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    const browser = await crearBrowser();
 
     try {
         const page = await browser.newPage();
@@ -558,10 +586,7 @@ async function scrapearDesdeURL(urlPersonalizada) {
 
 async function scrapearTodosLosDramas() {
     console.log('🚀 Iniciando scraping completo...');
-    const browser = await puppeteer.launch({ 
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    const browser = await crearBrowser();
 
     try {
         const page = await browser.newPage();
@@ -659,10 +684,7 @@ app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'panel.html'));
 });
 
-
-
-
-// server.js - Endpoint para verificar Firebase
+// 2. Verificar Firebase
 app.get('/api/firebase-verificar', async (req, res) => {
     try {
         if (!FIREBASE_URL) {
@@ -694,7 +716,7 @@ app.get('/api/firebase-verificar', async (req, res) => {
     }
 });
 
-// 2. Scraping desde URL personalizada
+// 3. Scraping desde URL personalizada
 app.post('/api/scrapear-url', async (req, res) => {
     const { url, guardarEnGitHub = true, guardarEnFirebase = true } = req.body;
     
@@ -709,6 +731,17 @@ app.post('/api/scrapear-url', async (req, res) => {
         return res.status(409).json({ 
             status: 'error', 
             mensaje: 'Ya hay un scraping en progreso' 
+        });
+    }
+
+    // Verificar que Puppeteer funciona antes de empezar
+    try {
+        const browser = await crearBrowser();
+        await browser.close();
+    } catch (error) {
+        return res.status(500).json({
+            status: 'error',
+            mensaje: `Error de configuración de Puppeteer: ${error.message}`
         });
     }
 
@@ -730,10 +763,8 @@ app.post('/api/scrapear-url', async (req, res) => {
             const totalEpisodios = resultados.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
             agregarLog(`✅ Scraping completado: ${resultados.length} dramas, ${totalEpisodios} episodios`, 'success');
 
-            // Guardar localmente
             await guardarDatosLocalmente(resultados);
             
-            // Guardar en Firebase
             if (guardarEnFirebase && FIREBASE_URL) {
                 agregarLog('📤 Guardando en Firebase...', 'info');
                 const resultadoFirebase = await guardarEnFirebase(resultados);
@@ -744,7 +775,6 @@ app.post('/api/scrapear-url', async (req, res) => {
                 }
             }
             
-            // Guardar en GitHub
             if (guardarEnGitHub && GITHUB_TOKEN) {
                 agregarLog('📤 Subiendo datos a GitHub...', 'info');
                 const resultadoGit = await guardarEnGitHub(
@@ -769,8 +799,7 @@ app.post('/api/scrapear-url', async (req, res) => {
     }, 1000);
 });
 
-
-// server.js - Endpoint para scrapear un drama específico
+// 4. Scrapear un drama específico
 app.post('/api/scrapear-drama', async (req, res) => {
     const { url } = req.body;
     
@@ -782,10 +811,7 @@ app.post('/api/scrapear-drama', async (req, res) => {
     }
 
     try {
-        const browser = await puppeteer.launch({ 
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
+        const browser = await crearBrowser();
         
         agregarLog(`🎬 Scrapeando drama: ${url}`, 'info');
         
@@ -793,14 +819,12 @@ app.post('/api/scrapear-drama', async (req, res) => {
         await browser.close();
         
         if (resultado.episodios.length > 0) {
-            // Guardar en el array principal
             dramasData.push({
                 url: url,
                 ...resultado,
                 fechaScraping: new Date().toISOString()
             });
             
-            // Guardar localmente
             await guardarDatosLocalmente(dramasData);
             
             agregarLog(`✅ Drama procesado: ${resultado.titulo} - ${resultado.episodios.length} episodios`, 'success');
@@ -824,7 +848,7 @@ app.post('/api/scrapear-drama', async (req, res) => {
     }
 });
 
-// 3. Scraping completo
+// 5. Scraping completo
 app.post('/api/scrapear', async (req, res) => {
     if (estadoScraping.enProgreso) {
         return res.status(409).json({ 
@@ -888,7 +912,7 @@ app.post('/api/scrapear', async (req, res) => {
     }, 1000);
 });
 
-// 4. Estado del scraping
+// 6. Estado del scraping
 app.get('/api/estado-scraping', (req, res) => {
     res.json({
         enProgreso: estadoScraping.enProgreso,
@@ -902,7 +926,7 @@ app.get('/api/estado-scraping', (req, res) => {
     });
 });
 
-// 5. Guardar manualmente en GitHub
+// 7. Guardar manualmente en GitHub
 app.post('/api/guardar-github', async (req, res) => {
     try {
         const { archivo = CONFIG.archivoSalida, datos = dramasData, mensaje = '📊 Actualización manual de datos' } = req.body;
@@ -922,7 +946,7 @@ app.post('/api/guardar-github', async (req, res) => {
     }
 });
 
-// 6. Guardar en Firebase manualmente
+// 8. Guardar en Firebase manualmente
 app.post('/api/guardar-firebase', async (req, res) => {
     try {
         const { ruta = 'dramas', datos = dramasData } = req.body;
@@ -942,7 +966,7 @@ app.post('/api/guardar-firebase', async (req, res) => {
     }
 });
 
-// 7. Obtener datos desde Firebase
+// 9. Obtener datos desde Firebase
 app.get('/api/firebase', async (req, res) => {
     try {
         if (!FIREBASE_URL) {
@@ -967,7 +991,7 @@ app.get('/api/firebase', async (req, res) => {
     }
 });
 
-// 8. Obtener datos actuales
+// 10. Obtener datos actuales
 app.get('/api/datos', (req, res) => {
     const totalEpisodios = dramasData.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
     res.json({
@@ -978,7 +1002,7 @@ app.get('/api/datos', (req, res) => {
     });
 });
 
-// 9. Listar todos los dramas
+// 11. Listar todos los dramas
 app.get('/api/dramas', (req, res) => {
     const { limit = 50, offset = 0, search = '' } = req.query;
     let resultados = dramasData;
@@ -1006,7 +1030,7 @@ app.get('/api/dramas', (req, res) => {
     });
 });
 
-// 10. Obtener un drama específico
+// 12. Obtener un drama específico
 app.get('/api/dramas/:id', (req, res) => {
     const drama = dramasData.find(d => d.titulo === req.params.id || d.id === req.params.id);
     if (!drama) {
@@ -1015,7 +1039,7 @@ app.get('/api/dramas/:id', (req, res) => {
     res.json(drama);
 });
 
-// 11. Estadísticas
+// 13. Estadísticas
 app.get('/api/stats', (req, res) => {
     const totalEpisodios = dramasData.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
     const conVideo = dramasData.filter(d => d.episodios?.some(e => e.videoUrl)).length;
@@ -1032,7 +1056,31 @@ app.get('/api/stats', (req, res) => {
     });
 });
 
-// 12. Ruta principal
+// 14. Probar extracción de episodios
+app.post('/api/probar-episodios', async (req, res) => {
+    const { url } = req.body;
+    
+    if (!url || !url.includes('edge.narto-drama.com')) {
+        return res.status(400).json({ error: 'URL inválida' });
+    }
+
+    try {
+        const browser = await crearBrowser();
+        
+        const resultado = await extraerTodosLosEpisodios(browser, url);
+        await browser.close();
+        
+        res.json({
+            success: true,
+            url: url,
+            resultado: resultado
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 15. Ruta principal
 app.get('/', (req, res) => {
     res.json({
         nombre: 'Narto Drama API',
@@ -1052,6 +1100,7 @@ app.get('/', (req, res) => {
             '/api/stats': 'Estadísticas',
             '/api/scrapear': 'Iniciar scraping completo (POST)',
             '/api/scrapear-url': 'Scrapear desde URL personalizada (POST)',
+            '/api/scrapear-drama': 'Scrapear un drama específico (POST)',
             '/api/estado-scraping': 'Estado del scraping',
             '/api/guardar-github': 'Guardar en GitHub (POST)',
             '/api/guardar-firebase': 'Guardar en Firebase (POST)',
@@ -1061,34 +1110,16 @@ app.get('/', (req, res) => {
     });
 });
 
-// server.js - Endpoint para probar extracción de episodios
-app.post('/api/probar-episodios', async (req, res) => {
-    const { url } = req.body;
-    
-    if (!url || !url.includes('edge.narto-drama.com')) {
-        return res.status(400).json({ error: 'URL inválida' });
-    }
+// ============ INICIAR SERVIDOR ============
 
-    try {
-        const browser = await puppeteer.launch({ 
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
-        
-        const resultado = await extraerTodosLosEpisodios(browser, url);
-        await browser.close();
-        
-        res.json({
-            success: true,
-            url: url,
-            resultado: resultado
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+// Verificar Chrome al inicio
+verificarChrome().then(ok => {
+    if (ok) {
+        console.log('✅ Puppeteer listo para usar');
+    } else {
+        console.warn('⚠️ Puppeteer no está completamente configurado');
     }
 });
-
-// ============ INICIAR SERVIDOR ============
 
 app.listen(PORT, () => {
     console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
