@@ -566,66 +566,67 @@
                 });
         }
 
-        function cargarResultados() {
-            fetch(`${API_URL}/api/datos`)
-                .then(res => res.json())
-                .then(data => {
-                    const container = document.getElementById('resultsContainer');
-                    const count = document.getElementById('resultsCount');
+       // panel.html - Actualizar función cargarResultados
+function cargarResultados() {
+    fetch(`${API_URL}/api/datos`)
+        .then(res => res.json())
+        .then(data => {
+            const container = document.getElementById('resultsContainer');
+            const count = document.getElementById('resultsCount');
+            
+            if (data.datos && data.datos.length > 0) {
+                const totalEpisodios = data.datos.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
+                const totalConVideo = data.datos.reduce((sum, d) => {
+                    return sum + (d.episodios?.filter(e => e.videoUrl).length || 0);
+                }, 0);
+                
+                count.textContent = `📊 ${data.datos.length} dramas | 📺 ${totalEpisodios} episodios | 🎬 ${totalConVideo} con video`;
+                
+                let html = '';
+                data.datos.forEach((drama, index) => {
+                    const epCount = drama.episodios?.length || 0;
+                    const conVideo = drama.episodios?.filter(e => e.videoUrl).length || 0;
                     
-                    if (data.datos && data.datos.length > 0) {
-                        const totalEpisodios = data.datos.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
-                        count.textContent = `📊 ${data.datos.length} dramas | 📺 ${totalEpisodios} episodios`;
-                        
-                        let html = '';
-                        data.datos.forEach((drama, index) => {
-                            const epCount = drama.episodios?.length || 0;
-                            const conVideo = drama.episodios?.filter(e => e.videoUrl).length || 0;
-                            const statusClass = epCount > 0 && conVideo === epCount ? 'success' : 
-                                               (drama.error ? 'error' : 'pending');
-                            const statusText = drama.error ? '❌ Error' : 
-                                              (epCount > 0 && conVideo === epCount ? '✅ Completo' : '⏳ Parcial');
-                            
-                            html += `
-                                <div class="result-item">
-                                    <div class="header">
-                                        <span class="titulo">${index + 1}. ${drama.titulo || 'Sin título'}</span>
-                                        <span class="badge ${statusClass}">${statusText}</span>
-                                        <span style="font-size:12px; color:#888;">
-                                            📺 ${epCount} eps | 🎬 ${conVideo} con video
-                                        </span>
-                                    </div>
-                                    ${epCount > 0 ? `
-                                        <div class="episodios">
-                                            ${drama.episodios.slice(0, 20).map(ep => `
-                                                <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}">
-                                                    #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
-                                                </span>
-                                            `).join('')}
-                                            ${epCount > 20 ? `<span style="color:#666; font-size:11px; padding:2px 8px;">+${epCount - 20} más</span>` : ''}
-                                        </div>
-                                    ` : (drama.error ? `
-                                        <div style="color:#ef4444; font-size:12px; margin-top:4px;">
-                                            ❌ ${drama.error}
-                                        </div>
-                                    ` : '')}
-                                </div>
-                            `;
-                        });
-                        container.innerHTML = html;
-                    } else {
-                        count.textContent = '📊 0 dramas scrapeados';
-                        container.innerHTML = `
-                            <div style="color:#666; text-align:center; padding:20px;">
-                                No hay resultados aún. Inicia un scraping para ver los dramas.
+                    html += `
+                        <div class="result-item" style="border-left: 3px solid ${epCount > 0 ? '#22c55e' : '#ef4444'};">
+                            <div class="header">
+                                <span class="titulo">${index + 1}. ${drama.titulo || 'Sin título'}</span>
+                                <span style="font-size:12px; color:#888;">
+                                    📺 ${epCount} eps | 🎬 ${conVideo} con video
+                                </span>
                             </div>
-                        `;
-                    }
-                })
-                .catch(err => {
-                    console.error('Error cargando resultados:', err);
+                            ${epCount > 0 ? `
+                                <div class="episodios">
+                                    ${drama.episodios.slice(0, 20).map(ep => `
+                                        <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}" 
+                                              title="${ep.titulo || 'Episodio ' + ep.numero}">
+                                            #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
+                                        </span>
+                                    `).join('')}
+                                    ${epCount > 20 ? `<span style="color:#666; font-size:11px; padding:2px 8px;">+${epCount - 20} más</span>` : ''}
+                                </div>
+                            ` : (drama.error ? `
+                                <div style="color:#ef4444; font-size:12px; margin-top:4px;">
+                                    ❌ ${drama.error}
+                                </div>
+                            ` : '')}
+                        </div>
+                    `;
                 });
-        }
+                container.innerHTML = html;
+            } else {
+                count.textContent = '📊 0 dramas scrapeados';
+                container.innerHTML = `
+                    <div style="color:#666; text-align:center; padding:20px;">
+                        No hay resultados aún. Inicia un scraping para ver los dramas.
+                    </div>
+                `;
+            }
+        })
+        .catch(err => {
+            console.error('Error cargando resultados:', err);
+        });
+}
 
         function iniciarScrapingURL() {
             if (document.getElementById('btnScrapearURL').disabled) return;
