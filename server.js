@@ -772,6 +772,39 @@ app.get('/', (req, res) => {
         }
     });
 });
+/////////////////////////////////
+
+// ============ ENDPOINT PARA LIMPIAR DATOS ============
+app.post('/api/limpiar-datos', async (req, res) => {
+    try {
+        dramasData = [];
+        await guardarDatosLocalmente(dramasData);
+        agregarLog('🗑️ Todos los datos han sido limpiados', 'success');
+        res.json({ success: true, message: 'Datos limpiados correctamente' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============ ENDPOINT PARA LISTAR TAREAS ASÍNCRONAS ============
+app.get('/api/scrapear-tareas', (req, res) => {
+    const tareas = [];
+    for (const [id, data] of scrapingResults) {
+        tareas.push({
+            id: id,
+            status: data.status,
+            timestamp: data.timestamp,
+            resultado: data.status === 'completado' ? {
+                titulo: data.resultado?.titulo || '',
+                totalEpisodios: data.resultado?.episodios?.length || 0
+            } : null,
+            error: data.status === 'error' ? data.error : null
+        });
+    }
+    res.json({ tareas });
+});
+
+
 
 // ============ INICIAR SERVIDOR ============
 
