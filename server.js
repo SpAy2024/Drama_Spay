@@ -301,6 +301,9 @@ let dramasData = cargarDatos();
 
 // ============ FUNCIÓN MEJORADA PARA EXTRAER DRAMAS DE UNA PÁGINA ============
 
+// ============ FUNCIONES DE SCRAPING ============
+
+// 1. Extraer dramas de una página (con poster)
 async function extraerDramasDePagina(page, provider, pageNum) {
     const url = `https://edge.narto-drama.com/?lang=es-ES&tab-provider=${provider}&page=${pageNum}`;
     console.log(`   📄 Scrapeando página ${pageNum} de ${provider}: ${url}`);
@@ -308,7 +311,6 @@ async function extraerDramasDePagina(page, provider, pageNum) {
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
     await esperar(3000);
     
-    // Scroll para cargar contenido lazy
     await page.evaluate(async () => {
         await new Promise((resolve) => {
             let totalHeight = 0;
@@ -340,7 +342,13 @@ async function extraerDramasDePagina(page, provider, pageNum) {
                 const titulo = titleEl ? titleEl.textContent.trim() : '';
                 
                 const posterImg = card.querySelector('img.poster');
-                const posterUrl = posterImg ? posterImg.getAttribute('src') : '';
+                let posterUrl = '';
+                if (posterImg) {
+                    const src = posterImg.getAttribute('src');
+                    if (src) {
+                        posterUrl = src.startsWith('http') ? src : `https://edge.narto-drama.com${src}`;
+                    }
+                }
                 
                 const badge = card.querySelector('.provider-badge');
                 const provider = badge ? badge.textContent.trim() : providerName;
@@ -362,9 +370,8 @@ async function extraerDramasDePagina(page, provider, pageNum) {
     }, provider);
 }
 
-// ============ FUNCIÓN MEJORADA PARA EXTRAER DETALLES DE UN DRAMA ============
-
-async function extraerDetallesDrama(browser, urlDrama) {
+// 2. Extraer detalles de un drama (con poster)
+async function extraerDetallesDrama(browser, urlDrama, posterExistente = '') {
     const page = await browser.newPage();
     
     try {
@@ -382,26 +389,26 @@ async function extraerDetallesDrama(browser, urlDrama) {
                 tags: []
             };
             
-            // Título
             const titleEl = document.querySelector('h1.movie-title');
             if (titleEl) datos.titulo = titleEl.textContent.trim();
             
-            // Poster
             const posterImg = document.querySelector('.desktop-cover, .poster');
-            if (posterImg) datos.poster = posterImg.getAttribute('src') || '';
+            if (posterImg) {
+                const src = posterImg.getAttribute('src');
+                if (src) {
+                    datos.poster = src.startsWith('http') ? src : `https://edge.narto-drama.com${src}`;
+                }
+            }
             
-            // Sinopsis
             const sinopsisEl = document.querySelector('.movie-desc, .desktop-intro');
             if (sinopsisEl) datos.sinopsis = sinopsisEl.textContent.trim();
             
-            // Tags
             const tagEls = document.querySelectorAll('.desktop-tag, .movie-tag-pill');
             for (const tag of tagEls) {
                 const text = tag.textContent.trim();
                 if (text) datos.tags.push(text);
             }
             
-            // Episodios - Buscar en la barra lateral
             const episodeList = document.querySelector('#left-episodes-list');
             if (episodeList) {
                 const links = episodeList.querySelectorAll('a.left-episode-item');
@@ -420,14 +427,12 @@ async function extraerDetallesDrama(browser, urlDrama) {
                 }
             }
             
-            // Total de episodios
             const subEl = document.querySelector('.movie-sub');
             if (subEl) {
                 const match = subEl.textContent.match(/(\d+)\s*Episodios?/i);
                 if (match) datos.totalEpisodios = parseInt(match[1]);
             }
             
-            // Si no se encontraron episodios, buscar en el panel de episodios
             if (datos.episodios.length === 0) {
                 const epPanel = document.querySelector('aside.episode-panel .episode-list');
                 if (epPanel) {
@@ -458,6 +463,10 @@ async function extraerDetallesDrama(browser, urlDrama) {
             return datos;
         });
         
+        if (!detalles.poster && posterExistente) {
+            detalles.poster = posterExistente;
+        }
+        
         console.log(`   📺 ${detalles.episodios.length} episodios encontrados`);
         return detalles;
         
@@ -468,13 +477,98 @@ async function extraerDetallesDrama(browser, urlDrama) {
             sinopsis: '',
             totalEpisodios: 0,
             episodios: [],
-            poster: '',
+            poster: posterExistente || '',
             tags: []
         };
     } finally {
         await page.close();
     }
 }
+
+// 3. Scrapear desde URL personalizada (COMPLETA)
+async function scrapearDesdeURL(urlPersonalizada) {
+    console.log(`🚀 Scrapeando desde URL: ${urlPersonalizada}`);
+    const browser = await crearBrowser();
+
+    try {
+        const page = await browser.newPage();
+        await page.goto(urlPersonalizada, { waitUntil: 'networkidle2', timeout: 60000 });
+        await esperar(3000);
+        
+        const html = await page.content();
+        const $ = cheerio.load(html);
+        
+        const dramasList = [];
+        $('a[href*="/detail/watch/"]').each((i, el) => {
+            const href = $(el).attr('href');
+            const titulo = $(el).text().trim();
+            
+            let poster = '';
+            const card = $(el).closest('article.card');
+            if (card.length) {
+                const posterImg = card.find('img.poster');
+                if (posterImg.length) {
+                    const src = posterImg.attr('src');
+                    if (src) {
+                        poster = src.startsWith('http') ? src : `https://edge.narto-drama.com${src}`;
+                    }
+                }
+            }
+            
+            if (href && titulo && titulo.length > 3) {
+                const urlCompleta = href.startsWith('http') ? href : `${CONFIG.baseUrl}${href}`;
+                dramasList.push({ titulo, url: urlCompleta, poster });
+            }
+        });
+        
+        const unicos = [];
+        const urlsVistas = new Set();
+        for (const drama of dramasList) {
+            if (!urlsVistas.has(drama.url)) {
+                urlsVistas.add(drama.url);
+                unicos.push(drama);
+            }
+        }
+        
+        console.log(`📊 Encontrados ${unicos.length} dramas en la URL`);
+        
+        const limite = Math.min(10, unicos.length);
+        const resultados = [];
+        
+        for (let i = 0; i < limite; i++) {
+            const drama = unicos[i];
+            console.log(`📺 [${i+1}/${limite}] Procesando: ${drama.titulo}`);
+            
+            try {
+                const dramaCompleto = await extraerDetallesDrama(browser, drama.url, drama.poster);
+                resultados.push({
+                    ...drama,
+                    ...dramaCompleto,
+                    poster: dramaCompleto.poster || drama.poster || '',
+                    fechaScraping: new Date().toISOString()
+                });
+                console.log(`   ✅ ${dramaCompleto.totalEpisodios} episodios encontrados`);
+            } catch (error) {
+                console.log(`   ❌ Error: ${error.message}`);
+                resultados.push({ ...drama, error: error.message });
+            }
+            
+            await esperar(CONFIG.pausaEntrePeticiones);
+        }
+        
+        return resultados;
+        
+    } finally {
+        await browser.close();
+    }
+}
+
+///////////////
+
+
+
+// ============ FUNCIÓN MEJORADA PARA EXTRAER DETALLES DE UN DRAMA ============
+
 
 // ============ SCRAPING POR PROVEEDOR ============
 
@@ -514,7 +608,6 @@ async function scrapearProveedor(browser, provider) {
     await page.close();
     return todosLosDramas;
 }
-
 // ============ SCRAPING COMPLETO MEJORADO ============
 
 async function scrapearTodosLosDramasMejorado() {
@@ -535,10 +628,13 @@ async function scrapearTodosLosDramasMejorado() {
                     console.log(`   📺 [${procesados}/${dramasDelProvider.length}] ${drama.titulo}`);
                     
                     try {
-                        const detalles = await extraerDetallesDrama(browser, drama.url);
+                        // ✅ Pasar el poster de la tarjeta
+                        const detalles = await extraerDetallesDrama(browser, drama.url, drama.poster);
                         todosLosDramasCompletos.push({
                             ...drama,
                             ...detalles,
+                            // ✅ Asegurar que el poster sea la URL completa
+                            poster: detalles.poster || drama.poster || '',
                             fechaScraping: new Date().toISOString()
                         });
                         console.log(`      ✅ ${detalles.totalEpisodios} episodios`);
