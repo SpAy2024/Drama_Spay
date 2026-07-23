@@ -1005,22 +1005,102 @@ app.post('/api/guardar-github', async (req, res) => {
 });
 
 // 8. Guardar en Firebase manualmente
+// ============ GUARDAR EN FIREBASE (VERSIÓN CORREGIDA) ============
 app.post('/api/guardar-firebase', async (req, res) => {
     try {
-        const { ruta = 'dramas', datos = dramasData } = req.body;
+        // Si datos es null, usar dramasData
+        const datosParaGuardar = req.body?.datos || dramasData;
+        const ruta = req.body?.ruta || 'dramas';
         
-        if (!FIREBASE_URL) {
+        if (!datosParaGuardar || !Array.isArray(datosParaGuardar) || datosParaGuardar.length === 0) {
             return res.status(400).json({ 
                 success: false, 
-                error: 'FIREBASE_URL no configurado' 
+                error: 'No hay datos para guardar. Asegúrate de tener dramas scrapeados.' 
             });
         }
 
-        const resultado = await guardarEnFirebase(datos, ruta);
-        res.json(resultado);
+        console.log(`🔥 Guardando ${datosParaGuardar.length} dramas en Firebase...`);
+        console.log(`📤 Ruta: ${ruta}`);
+        
+        const resultado = await guardarEnFirebase(datosParaGuardar, ruta);
+        
+        if (resultado.success) {
+            res.json({
+                success: true,
+                message: `✅ ${datosParaGuardar.length} dramas guardados en Firebase`,
+                url: resultado.url,
+                total: datosParaGuardar.length
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: resultado.error || 'Error al guardar en Firebase'
+            });
+        }
         
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        console.error('❌ Error en guardar-firebase:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+
+
+// ============ FORZAR GUARDADO EN FIREBASE ============
+app.post('/api/guardar-firebase-forzado', async (req, res) => {
+    try {
+        const datosParaGuardar = dramasData;
+        
+        if (!datosParaGuardar || datosParaGuardar.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No hay datos locales para guardar' 
+            });
+        }
+
+        console.log(`🔥 Forzando guardado de ${datosParaGuardar.length} dramas en Firebase...`);
+        
+        const baseUrl = FIREBASE_URL.replace(/\/+$/, '');
+        let url = `${baseUrl}/dramas.json`;
+        
+        if (FIREBASE_SECRET) {
+            url = `${url}?auth=${FIREBASE_SECRET}`;
+        }
+
+        console.log(`📤 URL: ${url}`);
+        
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(datosParaGuardar)
+        });
+
+        const responseText = await response.text();
+        console.log(`📊 Respuesta: ${response.status}`);
+
+        if (!response.ok) {
+            throw new Error(`Error ${response.status}: ${responseText}`);
+        }
+
+        res.json({
+            success: true,
+            message: `✅ ${datosParaGuardar.length} dramas guardados en Firebase`,
+            url: `${baseUrl}/dramas`,
+            total: datosParaGuardar.length,
+            firebaseResponse: responseText ? JSON.parse(responseText) : null
+        });
+
+    } catch (error) {
+        console.error('❌ Error forzando guardado:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
     }
 });
 
