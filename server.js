@@ -141,11 +141,15 @@ function agregarLog(mensaje, tipo = 'info') {
 
 // ============ FUNCIONES DE FIREBASE ============
 
+// ============ FUNCIONES DE FIREBASE CON LOGS MEJORADOS ============
+
 async function guardarEnFirebase(datos, ruta = 'dramas') {
     if (!FIREBASE_URL) {
         console.error('❌ FIREBASE_URL no configurado');
         return { success: false, error: 'Firebase URL no configurada' };
     }
+
+    console.log(`🔥 Intentando guardar en Firebase: ${FIREBASE_URL}`);
 
     try {
         let baseUrl = FIREBASE_URL.replace(/\/+$/, '');
@@ -155,7 +159,7 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
             url = `${url}?auth=${FIREBASE_SECRET}`;
         }
 
-        console.log(`📤 Enviando a Firebase: ${url}`);
+        console.log(`📤 Enviando ${datos.length} dramas a Firebase: ${url}`);
         
         const response = await fetch(url, {
             method: 'PUT',
@@ -165,11 +169,15 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
             body: JSON.stringify(datos)
         });
 
+        console.log(`📊 Respuesta Firebase: ${response.status} ${response.statusText}`);
+
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`❌ Firebase error ${response.status}: ${errorText}`);
             
+            // Si falla con auth, intentar sin auth
             if (response.status === 401 && FIREBASE_SECRET) {
+                console.log('🔄 Intentando sin autenticación...');
                 const fallbackUrl = `${baseUrl}/${ruta}.json`;
                 const fallbackResponse = await fetch(fallbackUrl, {
                     method: 'PUT',
@@ -182,19 +190,26 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
                     console.log(`✅ Datos guardados en Firebase (sin auth)`);
                     return { success: true, url: `${baseUrl}/${ruta}` };
                 }
+                console.log(`❌ Falló sin auth: ${fallbackResponse.status}`);
             }
             
             throw new Error(`Error ${response.status}: ${errorText}`);
         }
 
-        console.log(`✅ Datos guardados en Firebase: ${baseUrl}/${ruta}`);
-        return { success: true, url: `${baseUrl}/${ruta}` };
+        const responseData = await response.json();
+        console.log(`✅ Datos guardados en Firebase correctamente`);
+        console.log(`📝 Respuesta:`, responseData);
+        
+        return { 
+            success: true, 
+            url: `${baseUrl}/${ruta}`,
+            data: responseData
+        };
     } catch (error) {
         console.error('❌ Error al guardar en Firebase:', error.message);
         return { success: false, error: error.message };
     }
 }
-
 // ============ FUNCIONES DE GITHUB ============
 
 async function guardarEnGitHub(contenido, nombreArchivo = 'dramas-completos-paginado.json', mensaje = '📊 Actualización automática de datos') {
@@ -569,6 +584,7 @@ app.get('/panel', (req, res) => {
 });
 
 // 2. Verificar Firebase
+// Endpoint para verificar Firebase
 app.get('/api/firebase-verificar', async (req, res) => {
     try {
         if (!FIREBASE_URL) {
@@ -581,23 +597,29 @@ app.get('/api/firebase-verificar', async (req, res) => {
         const baseUrl = FIREBASE_URL.replace(/\/+$/, '');
         const url = `${baseUrl}/dramas.json`;
         
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Error ${response.status}: ${await response.text()}`);
-        }
+        console.log(`🔍 Verificando Firebase: ${url}`);
         
-        const data = await response.json();
+        // Intentar leer datos
+        const response = await fetch(url);
+        const status = response.status;
+        const text = await response.text();
+        
         res.json({
             success: true,
             url: url,
-            data: data,
-            total: Array.isArray(data) ? data.length : (data ? 1 : 0)
+            status: status,
+            data: text ? JSON.parse(text) : null,
+            message: status === 200 ? 'Firebase accesible' : 'Firebase no accesible o vacío'
         });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        console.error('Error verificando Firebase:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            url: FIREBASE_URL
+        });
     }
 });
-
 // 3. Scraping desde URL personalizada (síncrono)
 app.post('/api/scrapear-url', async (req, res) => {
     const { url, guardarEnGitHub = true, guardarEnFirebase = true } = req.body;
@@ -1338,6 +1360,31 @@ app.get('/', (req, res) => {
     });
 });
 
+
+// Endpoint para ver los datos guardados localmente
+app.get('/api/archivo-local', (req, res) => {
+    try {
+        const archivo = CONFIG.archivoSalida;
+        if (fs.existsSync(archivo)) {
+            const raw = fs.readFileSync(archivo, 'utf8');
+            const data = JSON.parse(raw);
+            res.json({
+                success: true,
+                total: data.length,
+                archivo: archivo,
+                data: data.slice(0, 10) // Mostrar solo primeros 10 para no sobrecargar
+            });
+        } else {
+            res.json({
+                success: false,
+                error: 'El archivo local no existe',
+                archivo: archivo
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 // ============ INICIAR SERVIDOR ============
 
 verificarChrome().then(ok => {
