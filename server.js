@@ -106,6 +106,9 @@ let estadoScraping = {
     logs: []
 };
 
+const scrapingResults = new Map();
+
+
 function agregarLog(mensaje, tipo = 'info') {
     const entry = {
         tiempo: new Date().toISOString(),
