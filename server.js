@@ -1,4 +1,4 @@
-// server.js - VERSIÓN CON FIREBASE Y SCRAPING ASÍNCRONO
+// server.js - VERSIÓN MEJORADA CON MÚLTIPLES PROVEEDORES
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -30,10 +30,28 @@ app.use('/posters', express.static(path.join(__dirname, 'posters')));
 
 const CONFIG = {
     baseUrl: 'https://edge.narto-drama.com',
-    catalogoUrl: 'https://edge.narto-drama.com/?lang=es-ES&tab-provider=bilitv',
-    pausaEntrePeticiones: 2000,
-    maxPaginas: 4,
-    archivoSalida: 'dramas-completos-paginado.json'
+    archivoSalida: 'dramas-completos-paginado.json',
+    providers: [
+        'bilitv',
+        'bibishort',
+        'cubetv',
+        'dotdrama',
+        'dramabite',
+        'dramabox',
+        'dramanova',
+        'dramawave',
+        'flareflow',
+        'flextv',
+        'flickreels',
+        'freereels',
+        'fundrama',
+        'goodshort',
+        'happyshort',
+        'idrama',
+        'reelshort'
+    ],
+    maxPagesPerProvider: 3,
+    waitBetweenRequests: 2000
 };
 
 function esperar(ms) {
@@ -43,7 +61,6 @@ function esperar(ms) {
 // ============ CONFIGURACIÓN DE PUPPETEER PARA RENDER ============
 
 async function crearBrowser() {
-    // Intentar diferentes rutas de Chrome
     const chromePaths = [
         process.env.CHROME_PATH,
         '/usr/bin/chromium-browser',
@@ -62,9 +79,7 @@ async function crearBrowser() {
                 console.log(`✅ Chrome encontrado en: ${chromePath}`);
                 break;
             }
-        } catch (e) {
-            // continuar
-        }
+        } catch (e) {}
     }
     
     return await puppeteer.launch({ 
@@ -81,31 +96,15 @@ async function crearBrowser() {
     });
 }
 
-// Función para verificar si Chrome está instalado
-async function verificarChrome() {
-    try {
-        const browser = await crearBrowser();
-        const version = await browser.version();
-        await browser.close();
-        console.log(`✅ Chrome versión: ${version}`);
-        return true;
-    } catch (error) {
-        console.error('❌ Error verificando Chrome:', error.message);
-        return false;
-    }
-}
-
 // ============ ESTADO DEL SCRAPING ============
 
 let estadoScraping = {
     enProgreso: false,
     ultimoScraping: null,
     totalDramas: 0,
+    totalEpisodios: 0,
     logs: []
 };
-
-// Almacenar resultados de scraping asíncrono
-const scrapingResults = new Map();
 
 function agregarLog(mensaje, tipo = 'info') {
     const entry = {
@@ -137,7 +136,6 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
         }
 
         console.log(`📤 Enviando a Firebase: ${url}`);
-        console.log(`📊 Datos a guardar: ${JSON.stringify(datos).length} bytes`);
         
         const response = await fetch(url, {
             method: 'PUT',
@@ -170,15 +168,8 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
             throw new Error(`Error ${response.status}: ${errorText}`);
         }
 
-        const responseData = await response.json();
         console.log(`✅ Datos guardados en Firebase: ${baseUrl}/${ruta}`);
-        console.log(`📝 Respuesta Firebase:`, responseData);
-        
-        return { 
-            success: true, 
-            url: `${baseUrl}/${ruta}`,
-            data: responseData
-        };
+        return { success: true, url: `${baseUrl}/${ruta}` };
     } catch (error) {
         console.error('❌ Error al guardar en Firebase:', error.message);
         return { success: false, error: error.message };
@@ -274,382 +265,278 @@ function cargarDatos() {
 
 let dramasData = cargarDatos();
 
-// ============ FUNCIÓN PARA EXTRAER TODOS LOS EPISODIOS ============
+// ============ FUNCIÓN MEJORADA PARA EXTRAER DRAMAS DE UNA PÁGINA ============
 
-async function extraerTodosLosEpisodios(browser, urlDrama) {
+async function extraerDramasDePagina(page, provider, pageNum) {
+    const url = `https://edge.narto-drama.com/?lang=es-ES&tab-provider=${provider}&page=${pageNum}`;
+    console.log(`   📄 Scrapeando página ${pageNum} de ${provider}: ${url}`);
+    
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    await esperar(3000);
+    
+    // Scroll para cargar contenido lazy
+    await page.evaluate(async () => {
+        await new Promise((resolve) => {
+            let totalHeight = 0;
+            const distance = 200;
+            const timer = setInterval(() => {
+                const scrollHeight = document.body.scrollHeight;
+                window.scrollBy(0, distance);
+                totalHeight += distance;
+                if (totalHeight >= scrollHeight || totalHeight > 5000) {
+                    clearInterval(timer);
+                    resolve();
+                }
+            }, 200);
+        });
+    });
+    
+    await esperar(2000);
+    
+    return await page.evaluate((providerName) => {
+        const dramas = [];
+        const cards = document.querySelectorAll('article.card.provider-search-card');
+        
+        for (const card of cards) {
+            try {
+                // Extraer URL
+                const link = card.querySelector('a.card-link-overlay');
+                const watchUrl = link ? link.getAttribute('href') : '';
+                
+                // Extraer título
+                const titleEl = card.querySelector('h3.title');
+                const titulo = titleEl ? titleEl.textContent.trim() : '';
+                
+                // Extraer poster
+                const posterImg = card.querySelector('img.poster');
+                const posterUrl = posterImg ? posterImg.getAttribute('src') : '';
+                
+                // Extraer proveedor
+                const badge = card.querySelector('.provider-badge');
+                const provider = badge ? badge.textContent.trim() : providerName;
+                
+                if (watchUrl && titulo) {
+                    const urlCompleta = watchUrl.startsWith('http') ? watchUrl : `https://edge.narto-drama.com${watchUrl}`;
+                    dramas.push({
+                        titulo: titulo,
+                        url: urlCompleta,
+                        poster: posterUrl,
+                        provider: provider,
+                        providerName: providerName
+                    });
+                }
+            } catch (e) {
+                // Ignorar errores en cards individuales
+            }
+        }
+        
+        return dramas;
+    }, provider);
+}
+
+// ============ FUNCIÓN MEJORADA PARA EXTRAER DETALLES DE UN DRAMA ============
+
+async function extraerDetallesDrama(browser, urlDrama) {
     const page = await browser.newPage();
     
     try {
-        console.log(`📄 Cargando drama: ${urlDrama}`);
-        console.log(`⏰ Inicio: ${new Date().toLocaleTimeString()}`);
+        console.log(`   🔍 Extrayendo detalles: ${urlDrama}`);
+        await page.goto(urlDrama, { waitUntil: 'networkidle2', timeout: 60000 });
+        await esperar(4000);
         
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        await page.setViewport({ width: 1920, height: 1080 });
-        
-        console.log(`   ⏳ Navegando a la URL...`);
-        await page.goto(urlDrama, { 
-            waitUntil: 'networkidle2', 
-            timeout: 60000 
-        });
-        console.log(`   ✅ Página cargada`);
-        
-        console.log(`   ⏳ Esperando 5 segundos para contenido dinámico...`);
-        await esperar(5000);
-        console.log(`   ✅ Espera completada`);
-        
-        // EXTRAER TÍTULO
-        const titulo = await page.evaluate(() => {
-            const h1 = document.querySelector('h1.movie-title');
-            return h1 ? h1.textContent.trim() : 'No encontrado';
-        });
-        console.log(`   📝 Título: ${titulo}`);
-        
-        // EXTRAER EPISODIOS
-        console.log(`   🔍 Extrayendo episodios...`);
-        const episodios = await page.evaluate(() => {
-            const episodios = [];
-            const seen = new Set();
+        const detalles = await page.evaluate(() => {
+            const datos = {
+                titulo: '',
+                sinopsis: '',
+                totalEpisodios: 0,
+                episodios: [],
+                poster: '',
+                tags: []
+            };
             
-            // Buscar en el panel de episodios
-            const episodePanel = document.querySelector('aside.episode-panel');
+            // Título
+            const titleEl = document.querySelector('h1.movie-title');
+            if (titleEl) datos.titulo = titleEl.textContent.trim();
             
-            if (episodePanel) {
-                const episodeList = episodePanel.querySelector('.episode-list');
-                
-                if (episodeList) {
-                    const links = episodeList.querySelectorAll('a.episode-item');
-                    
-                    for (const link of links) {
-                        const href = link.getAttribute('href');
-                        const texto = link.textContent?.trim() || '';
-                        const titulo = link.getAttribute('title') || texto || `Episodio`;
-                        
-                        if (href && href.includes('/detail/watch/')) {
-                            const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
-                            
-                            const numMatch = texto.match(/(\d+)/);
-                            const numero = numMatch ? parseInt(numMatch[1]) : (episodios.length + 1);
-                            
-                            if (!seen.has(urlCompleta) && numero > 0) {
-                                seen.add(urlCompleta);
-                                episodios.push({
-                                    numero: numero,
-                                    titulo: titulo || `Episodio ${numero}`,
-                                    url: urlCompleta,
-                                    videoUrl: null
-                                });
-                            }
-                        }
+            // Poster
+            const posterImg = document.querySelector('.desktop-cover, .poster');
+            if (posterImg) datos.poster = posterImg.getAttribute('src') || '';
+            
+            // Sinopsis
+            const sinopsisEl = document.querySelector('.movie-desc, .desktop-intro');
+            if (sinopsisEl) datos.sinopsis = sinopsisEl.textContent.trim();
+            
+            // Tags
+            const tagEls = document.querySelectorAll('.desktop-tag, .movie-tag-pill');
+            for (const tag of tagEls) {
+                const text = tag.textContent.trim();
+                if (text) datos.tags.push(text);
+            }
+            
+            // Episodios - Buscar en la barra lateral
+            const episodeList = document.querySelector('#left-episodes-list');
+            if (episodeList) {
+                const links = episodeList.querySelectorAll('a.left-episode-item');
+                for (const link of links) {
+                    const href = link.getAttribute('href');
+                    const num = link.getAttribute('data-episode-number');
+                    if (href && href.includes('/detail/watch/')) {
+                        const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
+                        const numero = parseInt(num) || (datos.episodios.length + 1);
+                        datos.episodios.push({
+                            numero: numero,
+                            titulo: `Episodio ${numero}`,
+                            url: urlCompleta
+                        });
                     }
                 }
             }
             
-            // Si no se encontraron en el panel, buscar en todo el DOM
-            if (episodios.length === 0) {
-                const links = document.querySelectorAll('a[href*="/detail/watch/"]');
-                
-                for (const link of links) {
-                    const href = link.getAttribute('href');
-                    const texto = link.textContent?.trim() || '';
-                    
-                    // Filtrar enlaces no válidos
-                    if (texto.includes('Más dramas') || 
-                        texto.includes('Continuar') ||
-                        texto.includes('Seleccionar') ||
-                        texto.includes('Idioma') ||
-                        texto.includes('Compartir') ||
-                        texto.includes('Facebook') ||
-                        texto.includes('Twitter') ||
-                        texto.includes('WhatsApp')) {
-                        continue;
-                    }
-                    
-                    if (href && href.includes('/detail/watch/')) {
-                        const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
-                        
-                        let numero = 0;
-                        const urlMatch = href.match(/\/(\d+)(?:\?|$)/);
-                        if (urlMatch) {
-                            numero = parseInt(urlMatch[1]);
-                        } else {
-                            const textMatch = texto.match(/(\d+)/);
-                            if (textMatch) {
-                                numero = parseInt(textMatch[1]);
-                            }
-                        }
-                        
-                        if (!seen.has(urlCompleta) && numero > 0) {
-                            seen.add(urlCompleta);
-                            episodios.push({
+            // Total de episodios
+            const subEl = document.querySelector('.movie-sub');
+            if (subEl) {
+                const match = subEl.textContent.match(/(\d+)\s*Episodios?/i);
+                if (match) datos.totalEpisodios = parseInt(match[1]);
+            }
+            
+            // Si no se encontraron episodios, buscar en el panel de episodios
+            if (datos.episodios.length === 0) {
+                const epPanel = document.querySelector('aside.episode-panel .episode-list');
+                if (epPanel) {
+                    const links = epPanel.querySelectorAll('a.episode-item');
+                    for (const link of links) {
+                        const href = link.getAttribute('href');
+                        const texto = link.textContent.trim();
+                        if (href && href.includes('/detail/watch/')) {
+                            const urlCompleta = href.startsWith('http') ? href : `https://edge.narto-drama.com${href}`;
+                            const numMatch = texto.match(/(\d+)/);
+                            const numero = numMatch ? parseInt(numMatch[1]) : (datos.episodios.length + 1);
+                            datos.episodios.push({
                                 numero: numero,
                                 titulo: texto || `Episodio ${numero}`,
-                                url: urlCompleta,
-                                videoUrl: null
+                                url: urlCompleta
                             });
                         }
                     }
                 }
             }
             
-            // Ordenar por número
-            episodios.sort((a, b) => a.numero - b.numero);
+            // Ordenar episodios
+            datos.episodios.sort((a, b) => a.numero - b.numero);
             
-            // Eliminar duplicados
-            const unique = [];
-            const seenNums = new Set();
-            for (const ep of episodios) {
-                if (!seenNums.has(ep.numero)) {
-                    seenNums.add(ep.numero);
-                    unique.push(ep);
-                }
+            // Si totalEpisodios es 0, usar el número de episodios encontrados
+            if (datos.totalEpisodios === 0 && datos.episodios.length > 0) {
+                datos.totalEpisodios = datos.episodios.length;
             }
             
-            return unique;
+            return datos;
         });
         
-        console.log(`   📺 TOTAL EPISODIOS ENCONTRADOS: ${episodios.length}`);
-        
-        // Si hay episodios, mostrar los primeros 5
-        if (episodios.length > 0) {
-            const muestra = episodios.slice(0, 5).map(ep => `#${ep.numero}`).join(', ');
-            console.log(`   📺 Primeros episodios: ${muestra}...`);
-        } else {
-            console.log(`   ❌ NO SE ENCONTRARON EPISODIOS`);
-        }
-        
-        // EXTRAER VIDEOS
-        let conVideo = 0;
-        if (episodios.length > 0) {
-            console.log(`   🎬 Extrayendo videos de ${episodios.length} episodios...`);
-            console.log(`   ⏰ Inicio de extracción de videos: ${new Date().toLocaleTimeString()}`);
-            
-            let procesados = 0;
-            for (const ep of episodios) {
-                procesados++;
-                console.log(`   🔍 [${procesados}/${episodios.length}] Extrayendo video Episodio ${ep.numero}...`);
-                
-                try {
-                    const pageVideo = await browser.newPage();
-                    await pageVideo.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-                    
-                    await pageVideo.goto(ep.url, { waitUntil: 'networkidle2', timeout: 60000 });
-                    await esperar(2000);
-                    
-                    const videoUrl = await pageVideo.evaluate(() => {
-                        const video = document.querySelector('video#player');
-                        if (video && video.src && video.src.startsWith('http')) {
-                            return video.src;
-                        }
-                        
-                        const scripts = document.querySelectorAll('script');
-                        for (const script of scripts) {
-                            const text = script.textContent || '';
-                            const match = text.match(/const episodeItemsRaw = (\[.*?\]);/s);
-                            if (match) {
-                                try {
-                                    const data = JSON.parse(match[1]);
-                                    const currentEp = data.find(e => e.route_episode_number === parseInt(
-                                        window.location.pathname.match(/\/(\d+)/)?.[1] || '0'
-                                    ));
-                                    if (currentEp && currentEp.play_url) {
-                                        return currentEp.play_url;
-                                    }
-                                } catch (e) {}
-                            }
-                        }
-                        
-                        return null;
-                    });
-                    
-                    await pageVideo.close();
-                    
-                    if (videoUrl) {
-                        ep.videoUrl = videoUrl;
-                        conVideo++;
-                        console.log(`   ✅ Episodio ${ep.numero}: Video encontrado`);
-                    } else {
-                        console.log(`   ⚠️ Episodio ${ep.numero}: Sin video`);
-                    }
-                } catch (error) {
-                    console.log(`   ❌ Error en episodio ${ep.numero}: ${error.message}`);
-                }
-                
-                await esperar(800);
-            }
-            
-            console.log(`   📊 ${conVideo}/${episodios.length} con video`);
-            console.log(`   ⏰ Fin de extracción de videos: ${new Date().toLocaleTimeString()}`);
-        }
-        
-        console.log(`   ✅ Scraping completado: ${episodios.length} episodios`);
-        console.log(`   ⏰ Fin: ${new Date().toLocaleTimeString()}`);
-        
-        return {
-            titulo: titulo || 'Sin título',
-            sinopsis: '',
-            totalEpisodios: episodios.length,
-            episodios: episodios
-        };
+        console.log(`   📺 ${detalles.episodios.length} episodios encontrados`);
+        return detalles;
         
     } catch (error) {
-        console.log(`❌ Error extrayendo episodios: ${error.message}`);
-        console.log(`   Stack: ${error.stack}`);
+        console.log(`   ❌ Error extrayendo detalles: ${error.message}`);
         return {
             titulo: 'Error',
             sinopsis: '',
             totalEpisodios: 0,
-            episodios: []
+            episodios: [],
+            poster: '',
+            tags: []
         };
     } finally {
         await page.close();
     }
 }
 
-// ============ SCRAPING DESDE URL PERSONALIZADA ============
+// ============ SCRAPING POR PROVEEDOR ============
 
-async function scrapearDesdeURL(urlPersonalizada) {
-    console.log(`🚀 Scrapeando desde URL: ${urlPersonalizada}`);
-    const browser = await crearBrowser();
-
-    try {
-        const page = await browser.newPage();
-        await page.goto(urlPersonalizada, { waitUntil: 'networkidle2', timeout: 60000 });
-        await esperar(3000);
-        
-        const html = await page.content();
-        const $ = cheerio.load(html);
-        
-        const dramasList = [];
-        $('a[href*="/detail/watch/"]').each((i, el) => {
-            const href = $(el).attr('href');
-            const titulo = $(el).text().trim();
-            if (href && titulo && titulo.length > 3) {
-                const urlCompleta = href.startsWith('http') ? href : `${CONFIG.baseUrl}${href}`;
-                dramasList.push({ titulo, url: urlCompleta });
-            }
-        });
-        
-        const unicos = [];
-        const urlsVistas = new Set();
-        for (const drama of dramasList) {
-            if (!urlsVistas.has(drama.url)) {
-                urlsVistas.add(drama.url);
-                unicos.push(drama);
-            }
-        }
-        
-        console.log(`📊 Encontrados ${unicos.length} dramas en la URL`);
-        
-        const resultados = [];
-        const limite = Math.min(10, unicos.length);
-        
-        for (let i = 0; i < limite; i++) {
-            const drama = unicos[i];
-            console.log(`📺 [${i+1}/${limite}] Procesando: ${drama.titulo}`);
+async function scrapearProveedor(browser, provider) {
+    console.log(`\n🚀 Scrapeando proveedor: ${provider}`);
+    const page = await browser.newPage();
+    
+    let todosLosDramas = [];
+    let paginaActual = 1;
+    let tienePaginaSiguiente = true;
+    
+    while (tienePaginaSiguiente && paginaActual <= CONFIG.maxPagesPerProvider) {
+        try {
+            const dramas = await extraerDramasDePagina(page, provider, paginaActual);
+            console.log(`   📊 ${dramas.length} dramas encontrados en página ${paginaActual}`);
             
-            try {
-                const dramaCompleto = await extraerTodosLosEpisodios(browser, drama.url);
-                resultados.push({
-                    ...drama,
-                    ...dramaCompleto,
-                    fechaScraping: new Date().toISOString()
-                });
-                console.log(`   ✅ ${dramaCompleto.totalEpisodios} episodios encontrados`);
-            } catch (error) {
-                console.log(`   ❌ Error: ${error.message}`);
-                resultados.push({ ...drama, error: error.message });
+            if (dramas.length === 0) {
+                break;
             }
             
-            await esperar(CONFIG.pausaEntrePeticiones);
+            todosLosDramas = todosLosDramas.concat(dramas);
+            
+            // Verificar si hay página siguiente
+            tienePaginaSiguiente = await page.evaluate(() => {
+                const nextLink = document.querySelector('a[rel="next"], .pagination .next');
+                return nextLink !== null;
+            });
+            
+            paginaActual++;
+            await esperar(CONFIG.waitBetweenRequests);
+            
+        } catch (error) {
+            console.log(`   ❌ Error en página ${paginaActual}: ${error.message}`);
+            break;
         }
-        
-        return resultados;
-        
-    } finally {
-        await browser.close();
     }
+    
+    await page.close();
+    return todosLosDramas;
 }
 
-// ============ SCRAPING COMPLETO (TODAS LAS PÁGINAS) ============
+// ============ SCRAPING COMPLETO MEJORADO ============
 
-async function scrapearTodosLosDramas() {
-    console.log('🚀 Iniciando scraping completo...');
+async function scrapearTodosLosDramasMejorado() {
+    console.log('🚀 Iniciando scraping completo mejorado...');
     const browser = await crearBrowser();
-
+    const todosLosDramasCompletos = [];
+    
     try {
-        const page = await browser.newPage();
-        const todosLosDramas = [];
-        let paginaActual = 1;
-        let tienePaginaSiguiente = true;
-
-        while (tienePaginaSiguiente && paginaActual <= CONFIG.maxPaginas) {
-            const url = `${CONFIG.catalogoUrl}&page=${paginaActual}`;
-            console.log(`📄 Scrapeando página ${paginaActual}...`);
-            
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-            await esperar(3000);
-            
-            const html = await page.content();
-            const $ = cheerio.load(html);
-            
-            const dramasEnPagina = [];
-            $('a[href*="/detail/watch/"]').each((i, el) => {
-                const href = $(el).attr('href');
-                const titulo = $(el).text().trim();
-                if (href && titulo && titulo.length > 3) {
-                    const urlCompleta = href.startsWith('http') ? href : `${CONFIG.baseUrl}${href}`;
-                    dramasEnPagina.push({ titulo, url: urlCompleta });
-                }
-            });
-            
-            const unicos = [];
-            const urlsVistas = new Set();
-            for (const drama of dramasEnPagina) {
-                if (!urlsVistas.has(drama.url)) {
-                    urlsVistas.add(drama.url);
-                    unicos.push(drama);
-                }
-            }
-            
-            console.log(`   ✅ ${unicos.length} dramas en página ${paginaActual}`);
-            todosLosDramas.push(...unicos);
-            
-            const paginacion = await page.evaluate(() => {
-                const text = document.body.textContent || '';
-                return { tieneSiguiente: text.includes('Siguiente') || text.includes('Next') };
-            });
-            
-            tienePaginaSiguiente = paginacion.tieneSiguiente;
-            paginaActual++;
-            await esperar(CONFIG.pausaEntrePeticiones);
-        }
-        
-        console.log(`📊 Total: ${todosLosDramas.length} dramas`);
-        
-        const resultados = [];
-        const limite = Math.min(10, todosLosDramas.length);
-        
-        for (let i = 0; i < limite; i++) {
-            const drama = todosLosDramas[i];
-            console.log(`📺 [${i+1}/${limite}] Procesando: ${drama.titulo}`);
-            
+        for (const provider of CONFIG.providers) {
             try {
-                const dramaCompleto = await extraerTodosLosEpisodios(browser, drama.url);
-                resultados.push({
-                    ...drama,
-                    ...dramaCompleto,
-                    fechaScraping: new Date().toISOString()
-                });
-                console.log(`   ✅ ${dramaCompleto.totalEpisodios} episodios encontrados`);
+                console.log(`\n📦 Procesando proveedor: ${provider}`);
+                const dramasDelProvider = await scrapearProveedor(browser, provider);
+                console.log(`📊 Total en ${provider}: ${dramasDelProvider.length} dramas`);
+                
+                // Procesar cada drama del proveedor
+                let procesados = 0;
+                for (const drama of dramasDelProvider) {
+                    procesados++;
+                    console.log(`   📺 [${procesados}/${dramasDelProvider.length}] ${drama.titulo}`);
+                    
+                    try {
+                        const detalles = await extraerDetallesDrama(browser, drama.url);
+                        todosLosDramasCompletos.push({
+                            ...drama,
+                            ...detalles,
+                            fechaScraping: new Date().toISOString()
+                        });
+                        console.log(`      ✅ ${detalles.totalEpisodios} episodios`);
+                    } catch (error) {
+                        console.log(`      ❌ Error: ${error.message}`);
+                        todosLosDramasCompletos.push({
+                            ...drama,
+                            error: error.message,
+                            fechaScraping: new Date().toISOString()
+                        });
+                    }
+                    
+                    await esperar(CONFIG.waitBetweenRequests / 2);
+                }
+                
             } catch (error) {
-                console.log(`   ❌ Error: ${error.message}`);
-                resultados.push({ ...drama, error: error.message });
+                console.log(`❌ Error con proveedor ${provider}: ${error.message}`);
             }
-            
-            await esperar(CONFIG.pausaEntrePeticiones);
         }
         
-        return resultados;
+        console.log(`\n✅ Scraping completado: ${todosLosDramasCompletos.length} dramas`);
+        return todosLosDramasCompletos;
         
     } finally {
         await browser.close();
@@ -665,56 +552,15 @@ async function guardarDatosLocalmente(datos) {
     return { success: true, archivo };
 }
 
-// ============ ENDPOINTS DE LA API ============
+// ============ ENDPOINTS ============
 
 // 1. Panel web
 app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'panel.html'));
 });
 
-// 2. Verificar Firebase
-app.get('/api/firebase-verificar', async (req, res) => {
-    try {
-        if (!FIREBASE_URL) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'FIREBASE_URL no configurado' 
-            });
-        }
-
-        const baseUrl = FIREBASE_URL.replace(/\/+$/, '');
-        const url = `${baseUrl}/dramas.json`;
-        
-        console.log(`🔍 Verificando Firebase: ${url}`);
-        
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Error ${response.status}: ${await response.text()}`);
-        }
-        
-        const data = await response.json();
-        res.json({
-            success: true,
-            url: url,
-            data: data,
-            total: Array.isArray(data) ? data.length : (data ? 1 : 0)
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// 3. Scraping desde URL personalizada (síncrono - para compatibilidad)
-app.post('/api/scrapear-url', async (req, res) => {
-    const { url, guardarEnGitHub = true, guardarEnFirebase = true } = req.body;
-    
-    if (!url || !url.includes('edge.narto-drama.com')) {
-        return res.status(400).json({ 
-            status: 'error', 
-            mensaje: 'URL inválida. Debe ser de edge.narto-drama.com' 
-        });
-    }
-
+// 2. Scraping completo mejorado
+app.post('/api/scrapear-todos', async (req, res) => {
     if (estadoScraping.enProgreso) {
         return res.status(409).json({ 
             status: 'error', 
@@ -722,52 +568,46 @@ app.post('/api/scrapear-url', async (req, res) => {
         });
     }
 
-    try {
-        const browser = await crearBrowser();
-        await browser.close();
-    } catch (error) {
-        return res.status(500).json({
-            status: 'error',
-            mensaje: `Error de configuración de Puppeteer: ${error.message}`
-        });
-    }
-
     estadoScraping.enProgreso = true;
-    agregarLog(`🚀 Iniciando scraping completo desde URL: ${url}`, 'info');
+    agregarLog('🚀 Iniciando scraping completo de todos los proveedores...', 'info');
     
     res.json({ 
         status: 'iniciado', 
-        mensaje: 'El scraping ha comenzado. Se extraerán TODOS los episodios de cada drama.' 
+        mensaje: 'El scraping ha comenzado. Se extraerán TODOS los dramas de todos los proveedores.' 
     });
 
     setTimeout(async () => {
         try {
-            const resultados = await scrapearDesdeURL(url);
+            const resultados = await scrapearTodosLosDramasMejorado();
             
             estadoScraping.totalDramas = resultados.length;
             estadoScraping.ultimoScraping = new Date().toISOString();
             
             const totalEpisodios = resultados.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
+            estadoScraping.totalEpisodios = totalEpisodios;
+            
             agregarLog(`✅ Scraping completado: ${resultados.length} dramas, ${totalEpisodios} episodios`, 'success');
 
             await guardarDatosLocalmente(resultados);
             
-            if (guardarEnFirebase && FIREBASE_URL) {
+            // Guardar en Firebase
+            if (FIREBASE_URL) {
                 agregarLog('📤 Guardando en Firebase...', 'info');
                 const resultadoFirebase = await guardarEnFirebase(resultados);
                 if (resultadoFirebase.success) {
-                    agregarLog(`✅ Datos guardados en Firebase: ${resultadoFirebase.url}`, 'success');
+                    agregarLog(`✅ Datos guardados en Firebase`, 'success');
                 } else {
                     agregarLog(`⚠️ Error al guardar en Firebase: ${resultadoFirebase.error}`, 'error');
                 }
             }
             
-            if (guardarEnGitHub && GITHUB_TOKEN) {
+            // Guardar en GitHub
+            if (GITHUB_TOKEN) {
                 agregarLog('📤 Subiendo datos a GitHub...', 'info');
                 const resultadoGit = await guardarEnGitHub(
                     resultados, 
                     CONFIG.archivoSalida,
-                    `📊 Scraping completo: ${resultados.length} dramas con todos sus episodios`
+                    `📊 Scraping completo: ${resultados.length} dramas de ${CONFIG.providers.length} proveedores`
                 );
                 if (resultadoGit.success) {
                     agregarLog(`✅ Datos subidos a GitHub: ${resultadoGit.url || 'OK'}`, 'success');
@@ -786,294 +626,107 @@ app.post('/api/scrapear-url', async (req, res) => {
     }, 1000);
 });
 
-// ============ ENDPOINT PARA SCRAPING ASÍNCRONO ============
-app.post('/api/scrapear-drama-async', async (req, res) => {
-    const { url } = req.body;
+// 3. Scraping por proveedor específico
+app.post('/api/scrapear-proveedor', async (req, res) => {
+    const { provider } = req.body;
     
-    if (!url || !url.includes('edge.narto-drama.com/detail/watch/')) {
+    if (!provider) {
         return res.status(400).json({ 
             success: false, 
-            error: 'URL inválida. Debe ser una URL de detalle de drama.' 
+            error: 'Debes especificar un proveedor' 
         });
     }
 
-    // Generar un ID único para esta tarea
-    const taskId = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+    if (!CONFIG.providers.includes(provider)) {
+        return res.status(400).json({ 
+            success: false, 
+            error: `Proveedor no válido. Disponibles: ${CONFIG.providers.join(', ')}` 
+        });
+    }
+
+    if (estadoScraping.enProgreso) {
+        return res.status(409).json({ 
+            success: false, 
+            error: 'Ya hay un scraping en progreso' 
+        });
+    }
+
+    estadoScraping.enProgreso = true;
+    agregarLog(`🚀 Iniciando scraping del proveedor: ${provider}`, 'info');
     
-    // Responder inmediatamente con el ID de la tarea
-    res.json({
-        success: true,
-        taskId: taskId,
-        message: 'Scraping iniciado. Revisa el estado en /api/scrapear-estado/' + taskId
+    res.json({ 
+        success: true, 
+        mensaje: `Scraping de ${provider} iniciado` 
     });
 
-    // Procesar en segundo plano
-    (async () => {
+    setTimeout(async () => {
         try {
-            console.log(`🎬 [${taskId}] Iniciando scraping asíncrono: ${url}`);
-            agregarLog(`🎬 [${taskId}] Scrapeando: ${url}`, 'info');
-            
             const browser = await crearBrowser();
-            const resultado = await extraerTodosLosEpisodios(browser, url);
+            const dramas = await scrapearProveedor(browser, provider);
             await browser.close();
             
-            // Guardar el resultado en memoria
-            scrapingResults.set(taskId, {
-                status: 'completado',
-                resultado: resultado,
-                timestamp: new Date().toISOString()
-            });
+            let procesados = 0;
+            const resultados = [];
             
-            console.log(`✅ [${taskId}] Scraping completado: ${resultado.episodios.length} episodios`);
-            agregarLog(`✅ [${taskId}] ${resultado.episodios.length} episodios`, 'success');
-            
-            // Guardar automáticamente en el array principal
-            if (resultado.episodios.length > 0) {
-                dramasData.push({
-                    url: url,
-                    ...resultado,
-                    fechaScraping: new Date().toISOString()
-                });
-                await guardarDatosLocalmente(dramasData);
+            for (const drama of dramas) {
+                procesados++;
+                console.log(`   📺 [${procesados}/${dramas.length}] ${drama.titulo}`);
                 
-                // También guardar en Firebase automáticamente
-                if (FIREBASE_URL) {
-                    await guardarEnFirebase(dramasData);
+                try {
+                    const browser2 = await crearBrowser();
+                    const detalles = await extraerDetallesDrama(browser2, drama.url);
+                    await browser2.close();
+                    
+                    resultados.push({
+                        ...drama,
+                        ...detalles,
+                        fechaScraping: new Date().toISOString()
+                    });
+                } catch (error) {
+                    resultados.push({
+                        ...drama,
+                        error: error.message,
+                        fechaScraping: new Date().toISOString()
+                    });
                 }
+                
+                await esperar(CONFIG.waitBetweenRequests / 2);
             }
             
-        } catch (error) {
-            console.error(`❌ [${taskId}] Error: ${error.message}`);
-            scrapingResults.set(taskId, {
-                status: 'error',
-                error: error.message,
-                timestamp: new Date().toISOString()
-            });
-        }
-    })();
-});
-
-// Endpoint para consultar el estado de una tarea
-app.get('/api/scrapear-estado/:taskId', (req, res) => {
-    const { taskId } = req.params;
-    const result = scrapingResults.get(taskId);
-    
-    if (!result) {
-        return res.json({
-            status: 'pendiente',
-            message: 'La tarea aún no ha sido iniciada o ha expirado'
-        });
-    }
-    
-    res.json(result);
-});
-
-// Endpoint para listar todas las tareas
-app.get('/api/scrapear-tareas', (req, res) => {
-    const tareas = [];
-    for (const [id, data] of scrapingResults) {
-        tareas.push({
-            id: id,
-            status: data.status,
-            timestamp: data.timestamp
-        });
-    }
-    res.json({ tareas });
-});
-
-// 4. Scrapear un drama específico (síncrono - para compatibilidad)
-app.post('/api/scrapear-drama', async (req, res) => {
-    const { url } = req.body;
-    
-    if (!url || !url.includes('edge.narto-drama.com/detail/watch/')) {
-        return res.status(400).json({ 
-            success: false, 
-            error: 'URL inválida. Debe ser una URL de detalle de drama.' 
-        });
-    }
-
-    try {
-        const browser = await crearBrowser();
-        
-        agregarLog(`🎬 Scrapeando drama: ${url}`, 'info');
-        
-        const resultado = await extraerTodosLosEpisodios(browser, url);
-        await browser.close();
-        
-        if (resultado.episodios.length > 0) {
-            dramasData.push({
-                url: url,
-                ...resultado,
-                fechaScraping: new Date().toISOString()
-            });
-            
+            // Guardar resultados
+            dramasData = dramasData.concat(resultados);
             await guardarDatosLocalmente(dramasData);
             
-            agregarLog(`✅ Drama procesado: ${resultado.titulo} - ${resultado.episodios.length} episodios`, 'success');
-            
-            res.json({
-                success: true,
-                drama: resultado,
-                totalDramas: dramasData.length
-            });
-        } else {
-            res.json({
-                success: false,
-                error: 'No se encontraron episodios para este drama',
-                drama: resultado
-            });
-        }
-        
-    } catch (error) {
-        agregarLog(`❌ Error en scrapeo: ${error.message}`, 'error');
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// 5. Scraping completo
-app.post('/api/scrapear', async (req, res) => {
-    if (estadoScraping.enProgreso) {
-        return res.status(409).json({ 
-            status: 'error', 
-            mensaje: 'Ya hay un scraping en progreso' 
-        });
-    }
-
-    const { guardarEnGitHub = true, guardarEnFirebase = true } = req.body;
-    estadoScraping.enProgreso = true;
-    agregarLog('🚀 Iniciando scraping completo...', 'info');
-    
-    res.json({ 
-        status: 'iniciado', 
-        mensaje: 'El scraping ha comenzado. Se extraerán TODOS los episodios.' 
-    });
-
-    setTimeout(async () => {
-        try {
-            const resultados = await scrapearTodosLosDramas();
-            
-            estadoScraping.totalDramas = resultados.length;
+            estadoScraping.totalDramas = dramasData.length;
             estadoScraping.ultimoScraping = new Date().toISOString();
-            
-            const totalEpisodios = resultados.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
-            agregarLog(`✅ Scraping completado: ${resultados.length} dramas, ${totalEpisodios} episodios`, 'success');
-
-            await guardarDatosLocalmente(resultados);
-            
-            if (guardarEnFirebase && FIREBASE_URL) {
-                agregarLog('📤 Guardando en Firebase...', 'info');
-                const resultadoFirebase = await guardarEnFirebase(resultados);
-                if (resultadoFirebase.success) {
-                    agregarLog(`✅ Datos guardados en Firebase: ${resultadoFirebase.url}`, 'success');
-                } else {
-                    agregarLog(`⚠️ Error al guardar en Firebase: ${resultadoFirebase.error}`, 'error');
-                }
-            }
-            
-            if (guardarEnGitHub && GITHUB_TOKEN) {
-                agregarLog('📤 Subiendo datos a GitHub...', 'info');
-                const resultadoGit = await guardarEnGitHub(
-                    resultados, 
-                    CONFIG.archivoSalida,
-                    `📊 Actualización: ${resultados.length} dramas con todos sus episodios`
-                );
-                if (resultadoGit.success) {
-                    agregarLog(`✅ Datos subidos a GitHub: ${resultadoGit.url || 'OK'}`, 'success');
-                } else {
-                    agregarLog(`⚠️ Error al subir a GitHub: ${resultadoGit.error}`, 'error');
-                }
-            }
-
-            dramasData = resultados;
             estadoScraping.enProgreso = false;
-
+            
+            agregarLog(`✅ Scraping de ${provider} completado: ${resultados.length} dramas`, 'success');
+            
         } catch (error) {
-            agregarLog(`❌ Error en scraping: ${error.message}`, 'error');
+            agregarLog(`❌ Error en scraping de ${provider}: ${error.message}`, 'error');
             estadoScraping.enProgreso = false;
         }
     }, 1000);
 });
 
-// 6. Estado del scraping
+// 4. Estado del scraping
 app.get('/api/estado-scraping', (req, res) => {
     res.json({
         enProgreso: estadoScraping.enProgreso,
         ultimoScraping: estadoScraping.ultimoScraping,
         totalDramas: estadoScraping.totalDramas || dramasData.length,
+        totalEpisodios: estadoScraping.totalEpisodios || 0,
         logs: estadoScraping.logs.slice(0, 20),
-        version: '2.0.0',
+        version: '3.0.0',
+        providers: CONFIG.providers,
         githubConfigurado: !!GITHUB_TOKEN,
         firebaseConfigurado: !!FIREBASE_URL,
         repo: GITHUB_REPO
     });
 });
 
-// 7. Guardar manualmente en GitHub
-app.post('/api/guardar-github', async (req, res) => {
-    try {
-        const { archivo = CONFIG.archivoSalida, datos = dramasData, mensaje = '📊 Actualización manual de datos' } = req.body;
-        
-        if (!GITHUB_TOKEN) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'GITHUB_TOKEN no configurado' 
-            });
-        }
-
-        const resultado = await guardarEnGitHub(datos, archivo, mensaje);
-        res.json(resultado);
-        
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// 8. Guardar en Firebase manualmente
-app.post('/api/guardar-firebase', async (req, res) => {
-    try {
-        const { ruta = 'dramas', datos = dramasData } = req.body;
-        
-        if (!FIREBASE_URL) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'FIREBASE_URL no configurado' 
-            });
-        }
-
-        const resultado = await guardarEnFirebase(datos, ruta);
-        res.json(resultado);
-        
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// 9. Obtener datos desde Firebase
-app.get('/api/firebase', async (req, res) => {
-    try {
-        if (!FIREBASE_URL) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'FIREBASE_URL no configurado' 
-            });
-        }
-
-        const response = await fetch(`${FIREBASE_URL}/dramas.json`);
-        if (!response.ok) {
-            throw new Error(`Error al obtener datos: ${response.status}`);
-        }
-        const data = await response.json();
-        res.json({
-            success: true,
-            data: data,
-            url: `${FIREBASE_URL}/dramas.json`
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// 10. Obtener datos actuales
+// 5. Obtener datos
 app.get('/api/datos', (req, res) => {
     const totalEpisodios = dramasData.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
     res.json({
@@ -1084,94 +737,21 @@ app.get('/api/datos', (req, res) => {
     });
 });
 
-// 11. Listar todos los dramas
-app.get('/api/dramas', (req, res) => {
-    const { limit = 50, offset = 0, search = '' } = req.query;
-    let resultados = dramasData;
-    
-    if (search) {
-        const term = search.toLowerCase();
-        resultados = resultados.filter(d => 
-            d.titulo.toLowerCase().includes(term) ||
-            (d.etiquetas && d.etiquetas.some(t => t.toLowerCase().includes(term)))
-        );
-    }
-    
-    const total = resultados.length;
-    const paginados = resultados.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
-    
+// 6. Listar proveedores
+app.get('/api/proveedores', (req, res) => {
     res.json({
-        total,
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        data: paginados.map(d => ({
-            titulo: d.titulo,
-            totalEpisodios: d.totalEpisodios || d.episodios?.length || 0,
-            episodios: d.episodios || []
-        }))
+        providers: CONFIG.providers,
+        total: CONFIG.providers.length
     });
 });
 
-// 12. Obtener un drama específico
-app.get('/api/dramas/:id', (req, res) => {
-    const drama = dramasData.find(d => d.titulo === req.params.id || d.id === req.params.id);
-    if (!drama) {
-        return res.status(404).json({ error: 'Drama no encontrado' });
-    }
-    res.json(drama);
-});
-
-// 13. Estadísticas
-app.get('/api/stats', (req, res) => {
-    const totalEpisodios = dramasData.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
-    const conVideo = dramasData.filter(d => d.episodios?.some(e => e.videoUrl)).length;
-    const episodiosConVideo = dramasData.reduce((sum, d) => {
-        return sum + (d.episodios?.filter(e => e.videoUrl).length || 0);
-    }, 0);
-    
-    res.json({
-        totalDramas: dramasData.length,
-        totalEpisodios: totalEpisodios,
-        dramasConVideo: conVideo,
-        episodiosConVideo: episodiosConVideo,
-        ultimaActualizacion: estadoScraping.ultimoScraping || new Date().toISOString()
-    });
-});
-
-// 14. Probar extracción de episodios (endpoint de prueba)
-app.post('/api/probar-episodios', async (req, res) => {
-    const { url } = req.body;
-    
-    console.log(`🧪 [TEST] Probando scraping para: ${url}`);
-    
-    if (!url || !url.includes('edge.narto-drama.com')) {
-        return res.status(400).json({ error: 'URL inválida' });
-    }
-
-    try {
-        const browser = await crearBrowser();
-        const resultado = await extraerTodosLosEpisodios(browser, url);
-        await browser.close();
-        
-        console.log(`🧪 [TEST] Resultado: ${resultado.episodios?.length || 0} episodios`);
-        
-        res.json({
-            success: true,
-            url: url,
-            resultado: resultado
-        });
-    } catch (error) {
-        console.error(`🧪 [TEST] Error: ${error.message}`);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// 15. Ruta principal
+// 7. Ruta principal
 app.get('/', (req, res) => {
     res.json({
         nombre: 'Narto Drama API',
-        version: '2.0.0',
+        version: '3.0.0',
         panel: `${req.protocol}://${req.get('host')}/panel`,
+        providers: CONFIG.providers,
         github: {
             repo: GITHUB_REPO,
             configurado: !!GITHUB_TOKEN
@@ -1181,39 +761,25 @@ app.get('/', (req, res) => {
             configurado: !!FIREBASE_URL
         },
         endpoints: {
+            '/api/scrapear-todos': 'Scrapear todos los proveedores (POST)',
+            '/api/scrapear-proveedor': 'Scrapear un proveedor específico (POST)',
+            '/api/datos': 'Obtener todos los datos',
+            '/api/estado-scraping': 'Estado del scraping',
+            '/api/proveedores': 'Lista de proveedores',
             '/api/dramas': 'Lista todos los dramas',
             '/api/dramas/:id': 'Obtener drama específico',
-            '/api/stats': 'Estadísticas',
-            '/api/scrapear': 'Iniciar scraping completo (POST)',
-            '/api/scrapear-url': 'Scrapear desde URL personalizada (POST)',
-            '/api/scrapear-drama': 'Scrapear un drama específico (POST)',
-            '/api/scrapear-drama-async': 'Scrapear drama asíncrono (POST)',
-            '/api/scrapear-estado/:taskId': 'Estado de tarea asíncrona (GET)',
-            '/api/scrapear-tareas': 'Listar tareas asíncronas (GET)',
-            '/api/estado-scraping': 'Estado del scraping',
-            '/api/guardar-github': 'Guardar en GitHub (POST)',
-            '/api/guardar-firebase': 'Guardar en Firebase (POST)',
-            '/api/firebase': 'Obtener datos desde Firebase',
-            '/api/datos': 'Obtener todos los datos'
+            '/api/stats': 'Estadísticas'
         }
     });
 });
 
 // ============ INICIAR SERVIDOR ============
 
-// Verificar Chrome al inicio
-verificarChrome().then(ok => {
-    if (ok) {
-        console.log('✅ Puppeteer listo para usar');
-    } else {
-        console.warn('⚠️ Puppeteer no está completamente configurado');
-    }
-});
-
 app.listen(PORT, () => {
     console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
     console.log(`📊 Panel: http://localhost:${PORT}/panel`);
     console.log(`📚 API: http://localhost:${PORT}/api/dramas`);
+    console.log(`📦 Proveedores: ${CONFIG.providers.length}`);
     console.log(`🔐 GitHub: ${GITHUB_TOKEN ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`🔥 Firebase: ${FIREBASE_URL ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`📁 Repo: ${GITHUB_REPO}`);

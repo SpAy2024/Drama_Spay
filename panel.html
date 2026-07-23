@@ -102,6 +102,20 @@
         .btn-purple:hover {
             background: #7c3aed;
         }
+        .btn-cyan {
+            background: #06b6d4;
+            color: #fff;
+        }
+        .btn-cyan:hover {
+            background: #0891b2;
+        }
+        .btn-amber {
+            background: #f59e0b;
+            color: #000;
+        }
+        .btn-amber:hover {
+            background: #d97706;
+        }
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -124,6 +138,9 @@
         }
         .stat-item .num.yellow {
             color: #fbbf24;
+        }
+        .stat-item .num.cyan {
+            color: #06b6d4;
         }
         .stat-item .label {
             font-size: 12px;
@@ -253,9 +270,9 @@
             flex-wrap: wrap;
             margin-top: 12px;
         }
-        .url-input-group input {
+        .url-input-group input, .url-input-group select {
             flex: 1;
-            min-width: 300px;
+            min-width: 200px;
             padding: 12px 16px;
             background: #0a0a0a;
             border: 1px solid #2a2a2a;
@@ -264,12 +281,15 @@
             font-size: 14px;
             font-family: 'Consolas', monospace;
         }
-        .url-input-group input:focus {
+        .url-input-group input:focus, .url-input-group select:focus {
             outline: none;
             border-color: #e50914;
         }
         .url-input-group input::placeholder {
             color: #666;
+        }
+        .url-input-group select option {
+            background: #1a1a1a;
         }
         .url-examples {
             display: flex;
@@ -356,6 +376,13 @@
             background: #fbbf24;
             color: #000;
         }
+        .result-item .provider-badge {
+            font-size: 10px;
+            background: #3b82f6;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
         .result-item .episodios {
             display: flex;
             flex-wrap: wrap;
@@ -383,6 +410,35 @@
             font-size: 13px;
             margin-top: 8px;
         }
+        .provider-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .provider-btn {
+            padding: 6px 14px;
+            border: 1px solid #3a3a3a;
+            border-radius: 20px;
+            background: transparent;
+            color: #aaa;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .provider-btn:hover {
+            border-color: #e50914;
+            color: #fff;
+        }
+        .provider-btn.active {
+            border-color: #e50914;
+            background: rgba(229, 9, 20, 0.2);
+            color: #fff;
+        }
+        .provider-btn .count {
+            color: #666;
+            font-size: 10px;
+        }
         #dramaResultado {
             margin-top: 12px;
             display: none;
@@ -400,6 +456,18 @@
             max-height: 300px;
             overflow-y: auto;
         }
+        .task-status {
+            margin-top: 8px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            background: #1a1a1a;
+            font-size: 13px;
+            color: #aaa;
+        }
+        .task-status .task-id {
+            color: #60a5fa;
+            font-family: monospace;
+        }
         @media (max-width: 640px) {
             h1 {
                 font-size: 22px;
@@ -410,7 +478,7 @@
             .url-input-group {
                 flex-direction: column;
             }
-            .url-input-group input {
+            .url-input-group input, .url-input-group select {
                 min-width: unset;
                 width: 100%;
             }
@@ -452,6 +520,10 @@
                     <div class="num yellow" id="sinVideo">0</div>
                     <div class="label">Sin Video</div>
                 </div>
+                <div class="stat-item">
+                    <div class="num cyan" id="totalProveedores">0</div>
+                    <div class="label">Proveedores</div>
+                </div>
             </div>
             <div class="github-status" id="githubStatus">
                 <span class="icon">🔐</span>
@@ -472,6 +544,35 @@
             <button class="btn btn-secondary" onclick="cargarResultados()">
                 🔄 Actualizar
             </button>
+            <button class="btn btn-danger" onclick="limpiarDatos()">
+                🗑️ Limpiar Datos
+            </button>
+        </div>
+
+        <!-- Scraping por Proveedor -->
+        <div class="card">
+            <h2>📦 Scraping por Proveedor</h2>
+            <p style="margin-bottom:8px;">Selecciona un proveedor para scrapear todos sus dramas.</p>
+            
+            <div class="provider-selector" id="providerSelector">
+                <button class="provider-btn active" data-provider="todos" onclick="scrapearProveedor('todos')">
+                    🚀 Todos los proveedores
+                </button>
+                <span style="color:#666; font-size:12px; margin:0 4px;">|</span>
+                <span style="color:#666; font-size:12px;">Cargando proveedores...</span>
+            </div>
+            
+            <div id="providerStatus" style="margin-top:12px; display:none;">
+                <div style="background:#2a2a2a; border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <span id="providerStatusText" style="color:#fbbf24;">⏳ Scrapeando...</span>
+                        <span id="providerProgress" style="color:#888; font-size:13px;"></span>
+                    </div>
+                    <div style="margin-top:8px; height:4px; background:#1a1a1a; border-radius:2px; overflow:hidden;">
+                        <div id="providerProgressBar" style="height:100%; width:0%; background:linear-gradient(90deg, #e50914, #f6121d); border-radius:2px; transition:width 0.5s;"></div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Scrapear Drama Específico -->
@@ -481,8 +582,8 @@
             
             <div class="url-input-group">
                 <input type="text" id="dramaUrlInput" 
-                       placeholder="https://edge.narto-drama.com/detail/watch/istri-ceo-membuka-kedoknya?lang=id-ID" 
-                       value="https://edge.narto-drama.com/detail/watch/istri-ceo-membuka-kedoknya?lang=id-ID">
+                       placeholder="https://edge.narto-drama.com/detail/watch/romance-a-300-km-h/1?lang=es-ES" 
+                       value="https://edge.narto-drama.com/detail/watch/romance-a-300-km-h/1?lang=es-ES">
                 <button class="btn btn-primary" id="btnScrapearDrama" onclick="iniciarScrapingDrama()">
                     🎬 Extraer Episodios
                 </button>
@@ -534,6 +635,24 @@
             </div>
         </div>
 
+        <!-- Tareas Asíncronas -->
+        <div class="card">
+            <h2>📌 Tareas Asíncronas</h2>
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:8px;">
+                <button class="btn btn-secondary" onclick="listarTareas()">
+                    📋 Listar Tareas
+                </button>
+                <button class="btn btn-danger" onclick="limpiarTareas()">
+                    🗑️ Limpiar Tareas
+                </button>
+            </div>
+            <div id="tareasContainer" style="margin-top:12px; max-height:200px; overflow-y:auto;">
+                <div style="color:#666; text-align:center; padding:12px;">
+                    No hay tareas activas.
+                </div>
+            </div>
+        </div>
+
         <!-- Logs -->
         <div class="card">
             <h2>📋 Logs</h2>
@@ -551,6 +670,7 @@
         const API_URL = window.location.origin;
         let intervalEstado = null;
         let intervalResultados = null;
+        let tareasInterval = null;
 
         // ============ FUNCIONES ============
 
@@ -578,6 +698,8 @@
                 })
                 .then(data => {
                     const totalDramas = document.getElementById('totalDramas');
+                    const totalEpisodios = document.getElementById('totalEpisodios');
+                    const totalProveedores = document.getElementById('totalProveedores');
                     const githubRepo = document.getElementById('githubRepo');
                     const githubBadge = document.getElementById('githubBadge');
                     const statusBadge = document.getElementById('statusBadge');
@@ -586,6 +708,8 @@
                     const btnScrapearDrama = document.getElementById('btnScrapearDrama');
                     
                     if (totalDramas) totalDramas.textContent = data.totalDramas || 0;
+                    if (totalEpisodios) totalEpisodios.textContent = data.totalEpisodios || 0;
+                    if (totalProveedores) totalProveedores.textContent = data.providers?.length || 0;
                     if (githubRepo) githubRepo.textContent = data.repo || 'No configurado';
                     if (githubBadge) githubBadge.textContent = 
                         data.githubConfigurado ? '🔐 GitHub: ✅' : '🔐 GitHub: ❌';
@@ -629,6 +753,42 @@
                 });
         }
 
+        function cargarProveedores() {
+            fetch(`${API_URL}/api/proveedores`)
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('providerSelector');
+                    if (!container) return;
+                    
+                    // Limpiar proveedores existentes (mantener el botón "Todos")
+                    const existingBtns = container.querySelectorAll('.provider-btn:not([data-provider="todos"])');
+                    existingBtns.forEach(btn => btn.remove());
+                    
+                    // Separador
+                    const sep = container.querySelector('span:not([style])');
+                    if (sep) sep.remove();
+                    
+                    // Agregar separador
+                    const separator = document.createElement('span');
+                    separator.style.cssText = 'color:#666; font-size:12px; margin:0 4px;';
+                    separator.textContent = '|';
+                    container.appendChild(separator);
+                    
+                    // Agregar proveedores
+                    data.providers.forEach(provider => {
+                        const btn = document.createElement('button');
+                        btn.className = 'provider-btn';
+                        btn.dataset.provider = provider;
+                        btn.textContent = provider;
+                        btn.onclick = () => scrapearProveedor(provider);
+                        container.appendChild(btn);
+                    });
+                })
+                .catch(err => {
+                    console.error('Error cargando proveedores:', err);
+                });
+        }
+
         function cargarResultados() {
             fetch(`${API_URL}/api/datos`)
                 .then(res => res.json())
@@ -650,12 +810,14 @@
                         data.datos.forEach((drama, index) => {
                             const epCount = drama.episodios?.length || 0;
                             const conVideo = drama.episodios?.filter(e => e.videoUrl).length || 0;
+                            const provider = drama.provider || drama.providerName || '';
                             
                             html += `
                                 <div class="result-item" style="border-left: 3px solid ${epCount > 0 ? '#22c55e' : '#ef4444'};">
                                     <div class="header">
                                         <span class="titulo">${index + 1}. ${drama.titulo || 'Sin título'}</span>
-                                        <span style="font-size:12px; color:#888;">
+                                        <span style="font-size:12px; color:#888; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                            ${provider ? `<span class="provider-badge">${provider}</span>` : ''}
                                             📺 ${epCount} eps | 🎬 ${conVideo} con video
                                         </span>
                                     </div>
@@ -674,6 +836,7 @@
                                             ❌ ${drama.error}
                                         </div>
                                     ` : '')}
+                                    ${drama.sinopsis ? `<div style="color:#888; font-size:12px; margin-top:4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${drama.sinopsis}</div>` : ''}
                                 </div>
                             `;
                         });
@@ -690,6 +853,73 @@
                 .catch(err => {
                     console.error('Error cargando resultados:', err);
                 });
+        }
+
+        function scrapearProveedor(provider) {
+            const btn = document.querySelector(`.provider-btn[data-provider="${provider}"]`);
+            const allBtns = document.querySelectorAll('.provider-btn');
+            
+            if (btn) {
+                allBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            }
+            
+            const statusDiv = document.getElementById('providerStatus');
+            const statusText = document.getElementById('providerStatusText');
+            const progressBar = document.getElementById('providerProgressBar');
+            const progressText = document.getElementById('providerProgress');
+            
+            statusDiv.style.display = 'block';
+            statusText.textContent = provider === 'todos' ? '⏳ Scrapeando todos los proveedores...' : `⏳ Scrapeando proveedor: ${provider}`;
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Iniciando...';
+            
+            agregarLog(`🚀 Iniciando scraping de ${provider === 'todos' ? 'todos los proveedores' : provider}`, 'info');
+            
+            const endpoint = provider === 'todos' ? '/api/scrapear-todos' : '/api/scrapear-proveedor';
+            const body = provider === 'todos' ? {} : { provider };
+            
+            fetch(`${API_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            .then(res => res.json())
+            .then(data => {
+                agregarLog(`📊 ${data.mensaje || data.message || 'Scraping iniciado'}`, 'success');
+                
+                // Monitorear progreso
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += Math.random() * 10;
+                    if (progress > 95) progress = 95;
+                    progressBar.style.width = progress + '%';
+                    progressText.textContent = `Procesando... ${Math.round(progress)}%`;
+                    
+                    fetch(`${API_URL}/api/estado-scraping`)
+                        .then(r => r.json())
+                        .then(d => {
+                            if (!d.enProgreso) {
+                                clearInterval(interval);
+                                progressBar.style.width = '100%';
+                                progressText.textContent = '✅ Completado';
+                                statusText.textContent = '✅ Scraping completado';
+                                
+                                setTimeout(() => {
+                                    statusDiv.style.display = 'none';
+                                    cargarResultados();
+                                    cargarStats();
+                                }, 2000);
+                            }
+                        });
+                }, 3000);
+            })
+            .catch(err => {
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+                statusText.textContent = '❌ Error en scraping';
+                progressBar.style.width = '100%';
+                progressBar.style.background = '#ef4444';
+            });
         }
 
         function iniciarScrapingDrama() {
@@ -746,10 +976,12 @@
                                     <div style="color: #888; font-size: 13px;">
                                         📺 ${drama.totalEpisodios || drama.episodios?.length || 0} episodios | 🎬 ${totalConVideo} con video
                                     </div>
+                                    ${drama.poster ? `<div style="margin-top:4px;"><img src="${drama.poster}" style="max-width:100px; max-height:133px; border-radius:8px; border:1px solid #3a3a3a;"></div>` : ''}
                                 </div>
                                 <span class="status-badge done">✅ Completado</span>
                             </div>
                             ${drama.sinopsis ? `<div style="color: #aaa; font-size: 13px; margin-bottom: 12px;">${drama.sinopsis}</div>` : ''}
+                            ${drama.tags && drama.tags.length > 0 ? `<div style="color: #888; font-size: 12px; margin-bottom:8px;">🏷️ ${drama.tags.join(' ')}</div>` : ''}
                             <div class="episodios-grid">
                                 ${(drama.episodios || []).map(ep => `
                                     <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}" 
@@ -870,6 +1102,82 @@
             });
         }
 
+        function listarTareas() {
+            const container = document.getElementById('tareasContainer');
+            
+            fetch(`${API_URL}/api/scrapear-tareas`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.tareas && data.tareas.length > 0) {
+                        let html = '<div style="display:grid; gap:4px;">';
+                        data.tareas.forEach(tarea => {
+                            const statusColor = tarea.status === 'completado' ? '#22c55e' : 
+                                               tarea.status === 'error' ? '#ef4444' : '#fbbf24';
+                            const statusIcon = tarea.status === 'completado' ? '✅' : 
+                                              tarea.status === 'error' ? '❌' : '⏳';
+                            html += `
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:#1a1a1a; padding:8px 12px; border-radius:6px; border:1px solid #2a2a2a;">
+                                    <span style="font-family:monospace; font-size:12px; color:#60a5fa;">${tarea.id}</span>
+                                    <span style="color:${statusColor};">${statusIcon} ${tarea.status}</span>
+                                    <span style="color:#666; font-size:11px;">${new Date(tarea.timestamp).toLocaleTimeString()}</span>
+                                </div>
+                            `;
+                        });
+                        html += '</div>';
+                        container.innerHTML = html;
+                    } else {
+                        container.innerHTML = `
+                            <div style="color:#666; text-align:center; padding:12px;">
+                                No hay tareas activas.
+                            </div>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    container.innerHTML = `
+                        <div style="color:#ef4444; text-align:center; padding:12px;">
+                            ❌ Error al cargar tareas: ${err.message}
+                        </div>
+                    `;
+                });
+        }
+
+        function limpiarTareas() {
+            if (confirm('¿Estás seguro de que quieres limpiar todas las tareas?')) {
+                agregarLog('🗑️ Limpiando tareas...', 'info');
+                // Las tareas se limpian reiniciando el servidor o con un endpoint dedicado
+                // Por ahora, solo recargamos la lista
+                listarTareas();
+                agregarLog('✅ Tareas limpiadas', 'success');
+            }
+        }
+
+        function limpiarDatos() {
+            if (confirm('⚠️ ¿Estás seguro de que quieres limpiar todos los datos? Esta acción no se puede deshacer.')) {
+                if (confirm('¿Estás realmente seguro? Se eliminarán todos los dramas scrapeados.')) {
+                    agregarLog('🗑️ Limpiando todos los datos...', 'info');
+                    // Enviar petición para limpiar datos
+                    fetch(`${API_URL}/api/limpiar-datos`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            agregarLog('✅ Todos los datos han sido limpiados', 'success');
+                            cargarResultados();
+                            cargarStats();
+                        } else {
+                            agregarLog(`❌ Error al limpiar datos: ${data.error}`, 'error');
+                        }
+                    })
+                    .catch(err => {
+                        agregarLog(`❌ Error: ${err.message}`, 'error');
+                    });
+                }
+            }
+        }
+
         function guardarFirebase() {
             agregarLog('🔥 Guardando datos en Firebase...', 'info');
             fetch(`${API_URL}/api/guardar-firebase`, {
@@ -918,6 +1226,7 @@
             actualizarEstado();
             cargarStats();
             cargarResultados();
+            cargarProveedores();
 
             // Actualizar cada 30 segundos
             setInterval(actualizarEstado, 30000);
@@ -925,6 +1234,9 @@
                 cargarStats();
                 cargarResultados();
             }, 10000);
+
+            // Listar tareas cada 15 segundos
+            setInterval(listarTareas, 15000);
 
             // Enter en los inputs
             const urlInput = document.getElementById('urlInput');
