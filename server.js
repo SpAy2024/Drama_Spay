@@ -800,6 +800,7 @@ app.get('/api/scrapear-tareas', (req, res) => {
 app.post('/api/scrapear-drama', async (req, res) => {
     const { url } = req.body;
     
+    // Validación de URL
     if (!url || !url.includes('edge.narto-drama.com/detail/watch/')) {
         return res.status(400).json({ 
             success: false, 
@@ -808,14 +809,46 @@ app.post('/api/scrapear-drama', async (req, res) => {
     }
 
     try {
-        const browser = await crearBrowser();
-        
         agregarLog(`🎬 Scrapeando drama: ${url}`, 'info');
         
-        const resultado = await extraerTodosLosEpisodios(browser, url);
-        await browser.close();
+        // Intentar crear el browser con timeout
+        let browser;
+        try {
+            browser = await Promise.race([
+                crearBrowser(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout creando browser')), 30000))
+            ]);
+        } catch (browserError) {
+            agregarLog(`❌ Error creando browser: ${browserError.message}`, 'error');
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Error al iniciar el navegador. Por favor intenta de nuevo.' 
+            });
+        }
         
-        if (resultado.episodios.length > 0) {
+        let resultado;
+        try {
+            resultado = await Promise.race([
+                extraerTodosLosEpisodios(browser, url),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout extrayendo episodios')), 120000))
+            ]);
+        } catch (scrapeError) {
+            agregarLog(`❌ Error extrayendo episodios: ${scrapeError.message}`, 'error');
+            return res.status(500).json({ 
+                success: false, 
+                error: `Error al extraer episodios: ${scrapeError.message}` 
+            });
+        } finally {
+            if (browser) {
+                try {
+                    await browser.close();
+                } catch (closeError) {
+                    console.error('Error cerrando browser:', closeError);
+                }
+            }
+        }
+        
+        if (resultado.episodios && resultado.episodios.length > 0) {
             dramasData.push({
                 url: url,
                 ...resultado,
@@ -841,7 +874,11 @@ app.post('/api/scrapear-drama', async (req, res) => {
         
     } catch (error) {
         agregarLog(`❌ Error en scrapeo: ${error.message}`, 'error');
-        res.status(500).json({ success: false, error: error.message });
+        console.error('Error completo:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: `Error interno: ${error.message}` 
+        });
     }
 });
 
@@ -1237,6 +1274,36 @@ app.post('/api/probar-episodios', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+
+// Endpoint para diagnosticar Puppeteer
+app.get('/api/diagnostico', async (req, res) => {
+    try {
+        // Verificar que puppeteer está disponible
+        const puppeteerVersion = require('puppeteer/package.json').version;
+        
+        // Intentar crear browser
+        const browser = await crearBrowser();
+        const version = await browser.version();
+        await browser.close();
+        
+        res.json({
+            success: true,
+            puppeteerVersion: puppeteerVersion,
+            chromeVersion: version,
+            nodeVersion: process.version,
+            memory: process.memoryUsage(),
+            uptime: process.uptime()
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
+
 
 // 19. Ruta principal
 app.get('/', (req, res) => {
