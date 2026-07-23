@@ -143,67 +143,74 @@ function agregarLog(mensaje, tipo = 'info') {
 
 // ============ FUNCIONES DE FIREBASE CON LOGS MEJORADOS ============
 
+// ============ FUNCIONES DE FIREBASE (VERSIÓN CORREGIDA) ============
+
 async function guardarEnFirebase(datos, ruta = 'dramas') {
     if (!FIREBASE_URL) {
         console.error('❌ FIREBASE_URL no configurado');
         return { success: false, error: 'Firebase URL no configurada' };
     }
 
-    console.log(`🔥 Intentando guardar en Firebase: ${FIREBASE_URL}`);
-
     try {
         let baseUrl = FIREBASE_URL.replace(/\/+$/, '');
-        let url = `${baseUrl}/${ruta}.json`;
         
+        // 1. Primero obtener los datos existentes
+        let existingData = [];
+        try {
+            const getUrl = `${baseUrl}/${ruta}.json`;
+            const getResponse = await fetch(getUrl);
+            if (getResponse.ok) {
+                const existing = await getResponse.json();
+                if (Array.isArray(existing)) {
+                    existingData = existing;
+                }
+            }
+        } catch (e) {
+            console.log('ℹ️ No hay datos existentes en Firebase, se crearán nuevos');
+        }
+        
+        // 2. Combinar datos existentes con los nuevos (evitar duplicados)
+        const combinedData = [...existingData];
+        const existingUrls = new Set(existingData.map(item => item.url));
+        
+        for (const newItem of datos) {
+            if (!existingUrls.has(newItem.url)) {
+                combinedData.push(newItem);
+                existingUrls.add(newItem.url);
+            }
+        }
+        
+        console.log(`📊 Combinando: ${existingData.length} existentes + ${datos.length} nuevos = ${combinedData.length} totales`);
+        
+        // 3. Guardar los datos combinados
+        let url = `${baseUrl}/${ruta}.json`;
         if (FIREBASE_SECRET) {
             url = `${url}?auth=${FIREBASE_SECRET}`;
         }
 
-        console.log(`📤 Enviando ${datos.length} dramas a Firebase: ${url}`);
+        console.log(`📤 Guardando ${combinedData.length} dramas en Firebase: ${url}`);
         
         const response = await fetch(url, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(datos)
+            body: JSON.stringify(combinedData)
         });
-
-        console.log(`📊 Respuesta Firebase: ${response.status} ${response.statusText}`);
 
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`❌ Firebase error ${response.status}: ${errorText}`);
-            
-            // Si falla con auth, intentar sin auth
-            if (response.status === 401 && FIREBASE_SECRET) {
-                console.log('🔄 Intentando sin autenticación...');
-                const fallbackUrl = `${baseUrl}/${ruta}.json`;
-                const fallbackResponse = await fetch(fallbackUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(datos)
-                });
-                if (fallbackResponse.ok) {
-                    console.log(`✅ Datos guardados en Firebase (sin auth)`);
-                    return { success: true, url: `${baseUrl}/${ruta}` };
-                }
-                console.log(`❌ Falló sin auth: ${fallbackResponse.status}`);
-            }
-            
             throw new Error(`Error ${response.status}: ${errorText}`);
         }
 
-        const responseData = await response.json();
-        console.log(`✅ Datos guardados en Firebase correctamente`);
-        console.log(`📝 Respuesta:`, responseData);
-        
+        console.log(`✅ Datos guardados en Firebase: ${combinedData.length} dramas`);
         return { 
             success: true, 
             url: `${baseUrl}/${ruta}`,
-            data: responseData
+            total: combinedData.length,
+            added: datos.length,
+            existing: existingData.length
         };
     } catch (error) {
         console.error('❌ Error al guardar en Firebase:', error.message);
@@ -679,7 +686,47 @@ app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'panel.html'));
 });
 
-// 2. Verificar Firebase
+// Guardar en Firebase combinando datos
+app.post('/api/guardar-firebase-combinar', async (req, res) => {
+    try {
+        const { ruta = 'dramas', datos = dramasData } = req.body;
+        
+        if (!datos || !Array.isArray(datos) || datos.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No hay datos para guardar' 
+            });
+        }
+
+        console.log(`🔥 Guardando ${datos.length} dramas en Firebase (combinando)...`);
+        
+        const resultado = await guardarEnFirebase(datos, ruta);
+        
+        if (resultado.success) {
+            res.json({
+                success: true,
+                message: `✅ ${resultado.added} nuevos dramas agregados (${resultado.existing} existentes, ${resultado.total} totales)`,
+                url: resultado.url,
+                total: resultado.total,
+                added: resultado.added,
+                existing: resultado.existing
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: resultado.error || 'Error al guardar en Firebase'
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Error en guardar-firebase-combinar:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
 // Endpoint para verificar Firebase
 app.get('/api/firebase-verificar', async (req, res) => {
     try {
@@ -1355,7 +1402,7 @@ app.post('/api/scrapear-proveedor', async (req, res) => {
                 
                 try {
                     const browser2 = await crearBrowser();
-                    const detalles = await extraerDetallesDrama(browser2, drama.url);
+                    const detalles = await extraerDetallesDrama(browser2, drama.url, drama.poster);
                     await browser2.close();
                     
                     resultados.push({
@@ -1374,14 +1421,31 @@ app.post('/api/scrapear-proveedor', async (req, res) => {
                 await esperar(CONFIG.waitBetweenRequests / 2);
             }
             
-            dramasData = dramasData.concat(resultados);
+            // ✅ COMBINAR en lugar de reemplazar
+            const combinedData = [...dramasData];
+            const existingUrls = new Set(dramasData.map(item => item.url));
+            let addedCount = 0;
+            for (const newItem of resultados) {
+                if (!existingUrls.has(newItem.url)) {
+                    combinedData.push(newItem);
+                    existingUrls.add(newItem.url);
+                    addedCount++;
+                }
+            }
+            dramasData = combinedData;
+            
             await guardarDatosLocalmente(dramasData);
+            
+            // Guardar en Firebase combinando
+            if (FIREBASE_URL) {
+                await guardarEnFirebase(dramasData);
+            }
             
             estadoScraping.totalDramas = dramasData.length;
             estadoScraping.ultimoScraping = new Date().toISOString();
             estadoScraping.enProgreso = false;
             
-            agregarLog(`✅ Scraping de ${provider} completado: ${resultados.length} dramas`, 'success');
+            agregarLog(`✅ Scraping de ${provider} completado: ${addedCount} nuevos dramas agregados (${resultados.length} totales)`, 'success');
             
         } catch (error) {
             agregarLog(`❌ Error en scraping de ${provider}: ${error.message}`, 'error');
