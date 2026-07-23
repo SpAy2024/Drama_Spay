@@ -804,6 +804,92 @@ app.get('/api/scrapear-tareas', (req, res) => {
     res.json({ tareas });
 });
 
+/////////////////
+
+// ============ ENDPOINTS ADICIONALES ============
+
+// 16. Estadísticas (stats)
+app.get('/api/stats', (req, res) => {
+    const totalEpisodios = dramasData.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
+    const conVideo = dramasData.filter(d => d.episodios?.some(e => e.videoUrl)).length;
+    const episodiosConVideo = dramasData.reduce((sum, d) => {
+        return sum + (d.episodios?.filter(e => e.videoUrl).length || 0);
+    }, 0);
+    
+    res.json({
+        totalDramas: dramasData.length,
+        totalEpisodios: totalEpisodios,
+        dramasConVideo: conVideo,
+        episodiosConVideo: episodiosConVideo,
+        ultimaActualizacion: estadoScraping.ultimoScraping || new Date().toISOString()
+    });
+});
+
+// 17. Limpiar datos
+app.post('/api/limpiar-datos', async (req, res) => {
+    try {
+        dramasData = [];
+        await guardarDatosLocalmente(dramasData);
+        agregarLog('🗑️ Todos los datos han sido limpiados', 'success');
+        res.json({ success: true, message: 'Datos limpiados correctamente' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 18. Listar tareas asíncronas
+app.get('/api/scrapear-tareas', (req, res) => {
+    try {
+        const tareas = [];
+        for (const [id, data] of scrapingResults) {
+            const tarea = {
+                id: id,
+                status: data.status,
+                timestamp: data.timestamp,
+            };
+            
+            if (data.status === 'completado' && data.resultado) {
+                tarea.resultado = {
+                    titulo: data.resultado.titulo || 'Sin título',
+                    totalEpisodios: data.resultado.episodios?.length || 0
+                };
+            }
+            
+            if (data.status === 'error') {
+                tarea.error = data.error || 'Error desconocido';
+            }
+            
+            tareas.push(tarea);
+        }
+        
+        tareas.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        res.json({ 
+            tareas: tareas,
+            total: tareas.length
+        });
+    } catch (error) {
+        console.error('Error al listar tareas:', error);
+        res.status(500).json({ 
+            error: 'Error al obtener tareas',
+            message: error.message 
+        });
+    }
+});
+
+// 19. Proveedores (ya existe, pero asegurarlo)
+app.get('/api/proveedores', (req, res) => {
+    res.json({
+        providers: CONFIG.providers || [
+            'bilitv', 'bibishort', 'cubetv', 'dotdrama', 'dramabite',
+            'dramabox', 'dramanova', 'dramawave', 'flareflow', 'flextv',
+            'flickreels', 'freereels', 'fundrama', 'goodshort', 'happyshort',
+            'idrama', 'reelshort'
+        ],
+        total: CONFIG.providers?.length || 17
+    });
+});
+
 
 
 // ============ INICIAR SERVIDOR ============
