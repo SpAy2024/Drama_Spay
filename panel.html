@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎬 Panel de Scraping - Narto Drama</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0d0d0d;
+            color: #f0f0f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #e50914;
+            font-size: 28px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 12px;
+            color: #fff;
+        }
+        .card p {
+            color: #aaa;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #e50914;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #f6121d;
+            transform: scale(1.02);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-success {
+            background: #22c55e;
+            color: #fff;
+        }
+        .btn-success:hover {
+            background: #16a34a;
+        }
+        .btn-secondary {
+            background: #2a2a2a;
+            color: #e0e0e0;
+            border: 1px solid #3a3a3a;
+        }
+        .btn-secondary:hover {
+            background: #3a3a3a;
+        }
+        .btn-danger {
+            background: #ef4444;
+            color: #fff;
+        }
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+        .btn-purple {
+            background: #8b5cf6;
+            color: #fff;
+        }
+        .btn-purple:hover {
+            background: #7c3aed;
+        }
+        .btn-cyan {
+            background: #06b6d4;
+            color: #fff;
+        }
+        .btn-cyan:hover {
+            background: #0891b2;
+        }
+        .btn-amber {
+            background: #f59e0b;
+            color: #000;
+        }
+        .btn-amber:hover {
+            background: #d97706;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .stat-item {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-item .num {
+            font-size: 28px;
+            font-weight: bold;
+            color: #e50914;
+        }
+        .stat-item .num.green {
+            color: #22c55e;
+        }
+        .stat-item .num.yellow {
+            color: #fbbf24;
+        }
+        .stat-item .num.cyan {
+            color: #06b6d4;
+        }
+        .stat-item .label {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+        .log-container {
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 16px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            color: #e0e0e0;
+            margin-top: 12px;
+        }
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+        .log-entry .time {
+            color: #666;
+            margin-right: 12px;
+        }
+        .log-entry .level-info {
+            color: #60a5fa;
+        }
+        .log-entry .level-success {
+            color: #22c55e;
+        }
+        .log-entry .level-error {
+            color: #ef4444;
+        }
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #2a2a2a;
+            border-top-color: #e50914;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-badge.running {
+            background: #e50914;
+            color: #fff;
+        }
+        .status-badge.idle {
+            background: #2a2a2a;
+            color: #888;
+        }
+        .status-badge.done {
+            background: #22c55e;
+            color: #fff;
+        }
+        .loading-bar {
+            width: 100%;
+            height: 4px;
+            background: #2a2a2a;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+            display: none;
+        }
+        .loading-bar.active {
+            display: block;
+        }
+        .loading-bar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e50914, #f6121d);
+            border-radius: 2px;
+            width: 0%;
+            animation: progress 2s ease-in-out infinite;
+        }
+        @keyframes progress {
+            0% {
+                width: 0%;
+            }
+            50% {
+                width: 70%;
+            }
+            100% {
+                width: 100%;
+            }
+        }
+        .github-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            background: #2a2a2a;
+            margin-top: 8px;
+        }
+        .github-status .icon {
+            font-size: 18px;
+        }
+        .github-status .text {
+            font-size: 13px;
+            color: #e0e0e0;
+        }
+        .github-status .text .repo {
+            color: #60a5fa;
+        }
+        .url-input-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .url-input-group input, .url-input-group select {
+            flex: 1;
+            min-width: 200px;
+            padding: 12px 16px;
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-family: 'Consolas', monospace;
+        }
+        .url-input-group input:focus, .url-input-group select:focus {
+            outline: none;
+            border-color: #e50914;
+        }
+        .url-input-group input::placeholder {
+            color: #666;
+        }
+        .url-input-group select option {
+            background: #1a1a1a;
+        }
+        .url-examples {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        .url-examples .example {
+            background: #2a2a2a;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Consolas', monospace;
+        }
+        .url-examples .example:hover {
+            background: #3a3a3a;
+            color: #fff;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #e50914;
+            cursor: pointer;
+        }
+        .checkbox-group label {
+            color: #ccc;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .results-container {
+            margin-top: 12px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .result-item {
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            transition: all 0.3s;
+        }
+        .result-item:hover {
+            border-color: #e50914;
+        }
+        .result-item .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .result-item .titulo {
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            flex: 1;
+            min-width: 150px;
+        }
+        .result-item .badge {
+            font-size: 12px;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+        .result-item .badge.success {
+            background: #22c55e;
+            color: #fff;
+        }
+        .result-item .badge.error {
+            background: #ef4444;
+            color: #fff;
+        }
+        .result-item .badge.pending {
+            background: #fbbf24;
+            color: #000;
+        }
+        .result-item .provider-badge {
+            font-size: 10px;
+            background: #3b82f6;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+        .result-item .episodios {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+        }
+        .result-item .episodio {
+            background: #1a1a1a;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #666;
+            border: 1px solid #2a2a2a;
+        }
+        .result-item .episodio.has-video {
+            color: #22c55e;
+            border-color: #22c55e;
+        }
+        .result-item .episodio.no-video {
+            color: #666;
+            border-color: #3a3a3a;
+        }
+        .result-count {
+            color: #888;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+        .provider-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .provider-btn {
+            padding: 6px 14px;
+            border: 1px solid #3a3a3a;
+            border-radius: 20px;
+            background: transparent;
+            color: #aaa;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .provider-btn:hover {
+            border-color: #e50914;
+            color: #fff;
+        }
+        .provider-btn.active {
+            border-color: #e50914;
+            background: rgba(229, 9, 20, 0.2);
+            color: #fff;
+        }
+        .provider-btn .count {
+            color: #666;
+            font-size: 10px;
+        }
+        #dramaResultado {
+            margin-top: 12px;
+            display: none;
+        }
+        #dramaResultado .drama-info {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        #dramaResultado .episodios-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .task-status {
+            margin-top: 8px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            background: #1a1a1a;
+            font-size: 13px;
+            color: #aaa;
+        }
+        .task-status .task-id {
+            color: #60a5fa;
+            font-family: monospace;
+        }
+        @media (max-width: 640px) {
+            h1 {
+                font-size: 22px;
+            }
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .url-input-group {
+                flex-direction: column;
+            }
+            .url-input-group input, .url-input-group select {
+                min-width: unset;
+                width: 100%;
+            }
+            .result-item .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Panel de Scraping</h1>
+        <div class="subtitle">Gestiona el scraping de dramas y actualiza la API automáticamente</div>
+
+        <!-- Estado -->
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                <h2>📊 Estado del Sistema</h2>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <span class="status-badge idle" id="statusBadge">🟢 IDLE</span>
+                    <span id="githubBadge" style="font-size:12px; color:#666;">🔐 GitHub: ⏳</span>
+                </div>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="num" id="totalDramas">0</div>
+                    <div class="label">Dramas</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num" id="totalEpisodios">0</div>
+                    <div class="label">Episodios</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num green" id="conVideo">0</div>
+                    <div class="label">Con Video</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num yellow" id="sinVideo">0</div>
+                    <div class="label">Sin Video</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num cyan" id="totalProveedores">0</div>
+                    <div class="label">Proveedores</div>
+                </div>
+            </div>
+            <div class="github-status" id="githubStatus">
+                <span class="icon">🔐</span>
+                <span class="text">GitHub: <span class="repo" id="githubRepo">Cargando...</span></span>
+            </div>
+            <div class="loading-bar" id="loadingBar">
+                <div class="fill"></div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-success" onclick="guardarFirebase()">
+                🔥 Guardar en Firebase
+            </button>
+            <button class="btn btn-secondary" onclick="cargarFirebase()">
+                📥 Cargar desde Firebase
+            </button>
+            <button class="btn btn-secondary" onclick="cargarResultados()">
+                🔄 Actualizar
+            </button>
+            <button class="btn btn-danger" onclick="limpiarDatos()">
+                🗑️ Limpiar Datos
+            </button>
+        </div>
+
+        <!-- Scraping por Proveedor -->
+        <div class="card">
+            <h2>📦 Scraping por Proveedor</h2>
+            <p style="margin-bottom:8px;">Selecciona un proveedor para scrapear todos sus dramas.</p>
+            
+            <div class="provider-selector" id="providerSelector">
+                <button class="provider-btn active" data-provider="todos" onclick="scrapearProveedor('todos')">
+                    🚀 Todos los proveedores
+                </button>
+                <span style="color:#666; font-size:12px; margin:0 4px;">|</span>
+                <span style="color:#666; font-size:12px;">Cargando proveedores...</span>
+            </div>
+            
+            <div id="providerStatus" style="margin-top:12px; display:none;">
+                <div style="background:#2a2a2a; border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <span id="providerStatusText" style="color:#fbbf24;">⏳ Scrapeando...</span>
+                        <span id="providerProgress" style="color:#888; font-size:13px;"></span>
+                    </div>
+                    <div style="margin-top:8px; height:4px; background:#1a1a1a; border-radius:2px; overflow:hidden;">
+                        <div id="providerProgressBar" style="height:100%; width:0%; background:linear-gradient(90deg, #e50914, #f6121d); border-radius:2px; transition:width 0.5s;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scrapear Drama Específico -->
+        <div class="card">
+            <h2>🎬 Scrapear Drama Específico</h2>
+            <p style="margin-bottom:8px;">Ingresa la URL de un drama para extraer TODOS sus episodios.</p>
+            
+            <div class="url-input-group">
+                <input type="text" id="dramaUrlInput" 
+                       placeholder="https://edge.narto-drama.com/detail/watch/romance-a-300-km-h/1?lang=es-ES" 
+                       value="https://edge.narto-drama.com/detail/watch/romance-a-300-km-h/1?lang=es-ES">
+                <button class="btn btn-primary" id="btnScrapearDrama" onclick="iniciarScrapingDrama()">
+                    🎬 Extraer Episodios
+                </button>
+            </div>
+            
+            <div id="dramaResultado">
+                <div class="drama-info" id="dramaInfo">
+                    <div style="color: #666; text-align: center; padding: 20px;">
+                        Esperando scrapeo...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scraping por URL personalizada -->
+        <div class="card">
+            <h2>🔗 Scraping desde URL Personalizada</h2>
+            <p style="margin-bottom:8px;">Pega cualquier URL del catálogo de Narto Drama para scrapear dramas específicos.</p>
+            
+            <div class="url-input-group">
+                <input type="text" id="urlInput" placeholder="https://edge.narto-drama.com/?lang=es-ES&page=2&tab-provider=bilitv" value="https://edge.narto-drama.com/?lang=es-ES&page=2&tab-provider=bilitv">
+                <button class="btn btn-purple" id="btnScrapearURL" onclick="iniciarScrapingURL()">
+                    🚀 Scrapear desde URL
+                </button>
+            </div>
+            
+            <div class="url-examples">
+                <span style="color:#666;font-size:12px;">Ejemplos:</span>
+                <span class="example" onclick="document.getElementById('urlInput').value='https://edge.narto-drama.com/?lang=es-ES&page=1&tab-provider=bilitv'">Página 1</span>
+                <span class="example" onclick="document.getElementById('urlInput').value='https://edge.narto-drama.com/?lang=es-ES&page=2&tab-provider=bilitv'">Página 2</span>
+                <span class="example" onclick="document.getElementById('urlInput').value='https://edge.narto-drama.com/?lang=es-ES&page=3&tab-provider=bilitv'">Página 3</span>
+                <span class="example" onclick="document.getElementById('urlInput').value='https://edge.narto-drama.com/?lang=es-ES&tab-provider=bilitv'">Todas (página 1)</span>
+            </div>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="guardarGitHubURL" checked>
+                <label for="guardarGitHubURL">Guardar automáticamente en GitHub</label>
+            </div>
+        </div>
+
+        <!-- Resultados en tiempo real -->
+        <div class="card">
+            <h2>📋 Resultados del Scraping</h2>
+            <div id="resultsCount" class="result-count">Esperando scraping...</div>
+            <div id="resultsContainer" class="results-container">
+                <div style="color:#666; text-align:center; padding:20px;">
+                    No hay resultados aún. Inicia un scraping para ver los dramas.
+                </div>
+            </div>
+        </div>
+
+        <!-- Tareas Asíncronas -->
+        <div class="card">
+            <h2>📌 Tareas Asíncronas</h2>
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:8px;">
+                <button class="btn btn-secondary" onclick="listarTareas()">
+                    📋 Listar Tareas
+                </button>
+                <button class="btn btn-danger" onclick="limpiarTareas()">
+                    🗑️ Limpiar Tareas
+                </button>
+            </div>
+            <div id="tareasContainer" style="margin-top:12px; max-height:200px; overflow-y:auto;">
+                <div style="color:#666; text-align:center; padding:12px;">
+                    No hay tareas activas.
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs -->
+        <div class="card">
+            <h2>📋 Logs</h2>
+            <div class="log-container" id="logContainer">
+                <div class="log-entry">
+                    <span class="time">[Sistema]</span>
+                    <span class="level-info">Panel iniciado. Esperando acciones...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============ CONFIGURACIÓN ============
+        const API_URL = window.location.origin;
+        let intervalEstado = null;
+        let intervalResultados = null;
+        let tareasInterval = null;
+
+        // ============ FUNCIONES ============
+
+        function agregarLog(mensaje, nivel = 'info') {
+            const container = document.getElementById('logContainer');
+            if (!container) return;
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString();
+            const levelClass = nivel === 'success' ? 'level-success' : 
+                              nivel === 'error' ? 'level-error' : 'level-info';
+            entry.innerHTML = `
+                <span class="time">[${time}]</span>
+                <span class="${levelClass}">${mensaje}</span>
+            `;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function actualizarEstado() {
+            fetch(`${API_URL}/api/estado-scraping`)
+                .then(res => {
+                    if (!res.ok) throw new Error('Error en la respuesta');
+                    return res.json();
+                })
+                .then(data => {
+                    const totalDramas = document.getElementById('totalDramas');
+                    const totalEpisodios = document.getElementById('totalEpisodios');
+                    const totalProveedores = document.getElementById('totalProveedores');
+                    const githubRepo = document.getElementById('githubRepo');
+                    const githubBadge = document.getElementById('githubBadge');
+                    const statusBadge = document.getElementById('statusBadge');
+                    const loadingBar = document.getElementById('loadingBar');
+                    const btnScrapearURL = document.getElementById('btnScrapearURL');
+                    const btnScrapearDrama = document.getElementById('btnScrapearDrama');
+                    
+                    if (totalDramas) totalDramas.textContent = data.totalDramas || 0;
+                    if (totalEpisodios) totalEpisodios.textContent = data.totalEpisodios || 0;
+                    if (totalProveedores) totalProveedores.textContent = data.providers?.length || 0;
+                    if (githubRepo) githubRepo.textContent = data.repo || 'No configurado';
+                    if (githubBadge) githubBadge.textContent = 
+                        data.githubConfigurado ? '🔐 GitHub: ✅' : '🔐 GitHub: ❌';
+                    
+                    if (statusBadge) {
+                        if (data.enProgreso) {
+                            statusBadge.textContent = '🔄 SCRAPING...';
+                            statusBadge.className = 'status-badge running';
+                        } else {
+                            statusBadge.textContent = '🟢 IDLE';
+                            statusBadge.className = 'status-badge idle';
+                        }
+                    }
+                    
+                    if (loadingBar) {
+                        loadingBar.classList.toggle('active', data.enProgreso);
+                    }
+                    
+                    if (btnScrapearURL) btnScrapearURL.disabled = data.enProgreso;
+                    if (btnScrapearDrama) btnScrapearDrama.disabled = data.enProgreso;
+                })
+                .catch(err => {
+                    console.error('Error al obtener estado:', err);
+                });
+        }
+
+        function cargarStats() {
+            fetch(`${API_URL}/api/stats`)
+                .then(res => res.json())
+                .then(data => {
+                    const totalEpisodios = document.getElementById('totalEpisodios');
+                    const conVideo = document.getElementById('conVideo');
+                    const sinVideo = document.getElementById('sinVideo');
+                    
+                    if (totalEpisodios) totalEpisodios.textContent = data.totalEpisodios || 0;
+                    if (conVideo) conVideo.textContent = data.episodiosConVideo || 0;
+                    if (sinVideo) sinVideo.textContent = (data.totalEpisodios || 0) - (data.episodiosConVideo || 0);
+                })
+                .catch(err => {
+                    console.error('Error cargando stats:', err);
+                });
+        }
+
+        function cargarProveedores() {
+            fetch(`${API_URL}/api/proveedores`)
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('providerSelector');
+                    if (!container) return;
+                    
+                    // Limpiar proveedores existentes (mantener el botón "Todos")
+                    const existingBtns = container.querySelectorAll('.provider-btn:not([data-provider="todos"])');
+                    existingBtns.forEach(btn => btn.remove());
+                    
+                    // Separador
+                    const sep = container.querySelector('span:not([style])');
+                    if (sep) sep.remove();
+                    
+                    // Agregar separador
+                    const separator = document.createElement('span');
+                    separator.style.cssText = 'color:#666; font-size:12px; margin:0 4px;';
+                    separator.textContent = '|';
+                    container.appendChild(separator);
+                    
+                    // Agregar proveedores
+                    data.providers.forEach(provider => {
+                        const btn = document.createElement('button');
+                        btn.className = 'provider-btn';
+                        btn.dataset.provider = provider;
+                        btn.textContent = provider;
+                        btn.onclick = () => scrapearProveedor(provider);
+                        container.appendChild(btn);
+                    });
+                })
+                .catch(err => {
+                    console.error('Error cargando proveedores:', err);
+                });
+        }
+
+        function cargarResultados() {
+            fetch(`${API_URL}/api/datos`)
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('resultsContainer');
+                    const count = document.getElementById('resultsCount');
+                    
+                    if (!container || !count) return;
+                    
+                    if (data.datos && data.datos.length > 0) {
+                        const totalEpisodios = data.datos.reduce((sum, d) => sum + (d.episodios?.length || 0), 0);
+                        const totalConVideo = data.datos.reduce((sum, d) => {
+                            return sum + (d.episodios?.filter(e => e.videoUrl).length || 0);
+                        }, 0);
+                        
+                        count.textContent = `📊 ${data.datos.length} dramas | 📺 ${totalEpisodios} episodios | 🎬 ${totalConVideo} con video`;
+                        
+                        let html = '';
+                        data.datos.forEach((drama, index) => {
+                            const epCount = drama.episodios?.length || 0;
+                            const conVideo = drama.episodios?.filter(e => e.videoUrl).length || 0;
+                            const provider = drama.provider || drama.providerName || '';
+                            
+                            html += `
+                                <div class="result-item" style="border-left: 3px solid ${epCount > 0 ? '#22c55e' : '#ef4444'};">
+                                    <div class="header">
+                                        <span class="titulo">${index + 1}. ${drama.titulo || 'Sin título'}</span>
+                                        <span style="font-size:12px; color:#888; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                            ${provider ? `<span class="provider-badge">${provider}</span>` : ''}
+                                            📺 ${epCount} eps | 🎬 ${conVideo} con video
+                                        </span>
+                                    </div>
+                                    ${epCount > 0 ? `
+                                        <div class="episodios">
+                                            ${drama.episodios.slice(0, 20).map(ep => `
+                                                <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}" 
+                                                      title="${ep.titulo || 'Episodio ' + ep.numero}">
+                                                    #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
+                                                </span>
+                                            `).join('')}
+                                            ${epCount > 20 ? `<span style="color:#666; font-size:11px; padding:2px 8px;">+${epCount - 20} más</span>` : ''}
+                                        </div>
+                                    ` : (drama.error ? `
+                                        <div style="color:#ef4444; font-size:12px; margin-top:4px;">
+                                            ❌ ${drama.error}
+                                        </div>
+                                    ` : '')}
+                                    ${drama.sinopsis ? `<div style="color:#888; font-size:12px; margin-top:4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${drama.sinopsis}</div>` : ''}
+                                </div>
+                            `;
+                        });
+                        container.innerHTML = html;
+                    } else {
+                        count.textContent = '📊 0 dramas scrapeados';
+                        container.innerHTML = `
+                            <div style="color:#666; text-align:center; padding:20px;">
+                                No hay resultados aún. Inicia un scraping para ver los dramas.
+                            </div>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    console.error('Error cargando resultados:', err);
+                });
+        }
+
+        function scrapearProveedor(provider) {
+            const btn = document.querySelector(`.provider-btn[data-provider="${provider}"]`);
+            const allBtns = document.querySelectorAll('.provider-btn');
+            
+            if (btn) {
+                allBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            }
+            
+            const statusDiv = document.getElementById('providerStatus');
+            const statusText = document.getElementById('providerStatusText');
+            const progressBar = document.getElementById('providerProgressBar');
+            const progressText = document.getElementById('providerProgress');
+            
+            statusDiv.style.display = 'block';
+            statusText.textContent = provider === 'todos' ? '⏳ Scrapeando todos los proveedores...' : `⏳ Scrapeando proveedor: ${provider}`;
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Iniciando...';
+            
+            agregarLog(`🚀 Iniciando scraping de ${provider === 'todos' ? 'todos los proveedores' : provider}`, 'info');
+            
+            const endpoint = provider === 'todos' ? '/api/scrapear-todos' : '/api/scrapear-proveedor';
+            const body = provider === 'todos' ? {} : { provider };
+            
+            fetch(`${API_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            .then(res => res.json())
+            .then(data => {
+                agregarLog(`📊 ${data.mensaje || data.message || 'Scraping iniciado'}`, 'success');
+                
+                // Monitorear progreso
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += Math.random() * 10;
+                    if (progress > 95) progress = 95;
+                    progressBar.style.width = progress + '%';
+                    progressText.textContent = `Procesando... ${Math.round(progress)}%`;
+                    
+                    fetch(`${API_URL}/api/estado-scraping`)
+                        .then(r => r.json())
+                        .then(d => {
+                            if (!d.enProgreso) {
+                                clearInterval(interval);
+                                progressBar.style.width = '100%';
+                                progressText.textContent = '✅ Completado';
+                                statusText.textContent = '✅ Scraping completado';
+                                
+                                setTimeout(() => {
+                                    statusDiv.style.display = 'none';
+                                    cargarResultados();
+                                    cargarStats();
+                                }, 2000);
+                            }
+                        });
+                }, 3000);
+            })
+            .catch(err => {
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+                statusText.textContent = '❌ Error en scraping';
+                progressBar.style.width = '100%';
+                progressBar.style.background = '#ef4444';
+            });
+        }
+
+        function iniciarScrapingDrama() {
+            const btn = document.getElementById('btnScrapearDrama');
+            if (!btn || btn.disabled) return;
+            
+            const url = document.getElementById('dramaUrlInput').value.trim();
+            if (!url) {
+                agregarLog('❌ Por favor, ingresa una URL de drama', 'error');
+                return;
+            }
+            
+            if (!url.includes('edge.narto-drama.com/detail/watch/')) {
+                agregarLog('❌ URL inválida. Debe ser una URL de detalle de drama.', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Scrapeando...';
+            agregarLog(`🎬 Scrapeando drama: ${url}`, 'info');
+            
+            const resultadoDiv = document.getElementById('dramaResultado');
+            const infoDiv = document.getElementById('dramaInfo');
+            if (resultadoDiv) resultadoDiv.style.display = 'block';
+            if (infoDiv) {
+                infoDiv.innerHTML = `
+                    <div style="color: #fbbf24; text-align: center; padding: 20px;">
+                        <span class="spinner"></span> Extrayendo episodios...
+                    </div>
+                `;
+            }
+            
+            fetch(`${API_URL}/api/scrapear-drama`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            })
+            .then(res => res.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = '🎬 Extraer Episodios';
+                
+                if (data.success) {
+                    const drama = data.drama;
+                    const totalConVideo = drama.episodios?.filter(e => e.videoUrl).length || 0;
+                    
+                    agregarLog(`✅ Drama procesado: ${drama.titulo} - ${drama.episodios?.length || 0} episodios`, 'success');
+                    
+                    if (infoDiv) {
+                        infoDiv.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+                                <div>
+                                    <h3 style="color: #fff; font-size: 18px;">${drama.titulo}</h3>
+                                    <div style="color: #888; font-size: 13px;">
+                                        📺 ${drama.totalEpisodios || drama.episodios?.length || 0} episodios | 🎬 ${totalConVideo} con video
+                                    </div>
+                                    ${drama.poster ? `<div style="margin-top:4px;"><img src="${drama.poster}" style="max-width:100px; max-height:133px; border-radius:8px; border:1px solid #3a3a3a;"></div>` : ''}
+                                </div>
+                                <span class="status-badge done">✅ Completado</span>
+                            </div>
+                            ${drama.sinopsis ? `<div style="color: #aaa; font-size: 13px; margin-bottom: 12px;">${drama.sinopsis}</div>` : ''}
+                            ${drama.tags && drama.tags.length > 0 ? `<div style="color: #888; font-size: 12px; margin-bottom:8px;">🏷️ ${drama.tags.join(' ')}</div>` : ''}
+                            <div class="episodios-grid">
+                                ${(drama.episodios || []).map(ep => `
+                                    <span class="episodio ${ep.videoUrl ? 'has-video' : 'no-video'}" 
+                                          title="${ep.titulo || 'Episodio ' + ep.numero}">
+                                        #${ep.numero} ${ep.videoUrl ? '🎬' : '❌'}
+                                    </span>
+                                `).join('')}
+                            </div>
+                            <div style="margin-top: 12px; font-size: 12px; color: #666;">
+                                Última actualización: ${new Date().toLocaleString()}
+                            </div>
+                        `;
+                    }
+                    
+                    cargarResultados();
+                    cargarStats();
+                    
+                } else {
+                    agregarLog(`❌ Error: ${data.error || 'No se pudieron extraer los episodios'}`, 'error');
+                    if (infoDiv) {
+                        infoDiv.innerHTML = `
+                            <div style="color: #ef4444; text-align: center; padding: 20px;">
+                                ❌ ${data.error || 'Error al scrapear el drama'}
+                            </div>
+                        `;
+                    }
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.textContent = '🎬 Extraer Episodios';
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+                if (infoDiv) {
+                    infoDiv.innerHTML = `
+                        <div style="color: #ef4444; text-align: center; padding: 20px;">
+                            ❌ ${err.message}
+                        </div>
+                    `;
+                }
+            });
+        }
+
+        function iniciarScrapingURL() {
+            const btn = document.getElementById('btnScrapearURL');
+            if (!btn || btn.disabled) return;
+            
+            const url = document.getElementById('urlInput').value.trim();
+            if (!url) {
+                agregarLog('❌ Por favor, ingresa una URL válida', 'error');
+                return;
+            }
+            
+            if (!url.includes('edge.narto-drama.com')) {
+                agregarLog('❌ URL inválida. Debe ser de edge.narto-drama.com', 'error');
+                return;
+            }
+
+            const guardarGit = document.getElementById('guardarGitHubURL').checked;
+            agregarLog(`🚀 Iniciando scraping desde URL: ${url}`, 'info');
+            btn.disabled = true;
+            btn.textContent = '⏳ Scrapeando...';
+            
+            const container = document.getElementById('resultsContainer');
+            const count = document.getElementById('resultsCount');
+            if (container) {
+                container.innerHTML = `
+                    <div style="color:#fbbf24; text-align:center; padding:20px;">
+                        ⏳ Scrapeando... <span class="spinner"></span>
+                    </div>
+                `;
+            }
+            if (count) count.textContent = '⏳ Scrapeando...';
+            
+            fetch(`${API_URL}/api/scrapear-url`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, guardarEnGitHub: guardarGit })
+            })
+            .then(res => res.json())
+            .then(data => {
+                agregarLog(`📊 ${data.mensaje}`, 'success');
+                
+                if (intervalEstado) clearInterval(intervalEstado);
+                if (intervalResultados) clearInterval(intervalResultados);
+                
+                intervalEstado = setInterval(() => {
+                    actualizarEstado();
+                    cargarStats();
+                    fetch(`${API_URL}/api/estado-scraping`)
+                        .then(r => r.json())
+                        .then(d => {
+                            if (!d.enProgreso) {
+                                clearInterval(intervalEstado);
+                                clearInterval(intervalResultados);
+                                agregarLog('✅ Scraping completado', 'success');
+                                if (btn) {
+                                    btn.disabled = false;
+                                    btn.textContent = '🚀 Scrapear desde URL';
+                                }
+                                const loadingBar = document.getElementById('loadingBar');
+                                if (loadingBar) loadingBar.classList.remove('active');
+                                cargarStats();
+                                cargarResultados();
+                            }
+                        });
+                }, 2000);
+                
+                intervalResultados = setInterval(cargarResultados, 3000);
+            })
+            .catch(err => {
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Scrapear desde URL';
+                }
+                const loadingBar = document.getElementById('loadingBar');
+                if (loadingBar) loadingBar.classList.remove('active');
+            });
+        }
+
+        function listarTareas() {
+            const container = document.getElementById('tareasContainer');
+            
+            fetch(`${API_URL}/api/scrapear-tareas`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.tareas && data.tareas.length > 0) {
+                        let html = '<div style="display:grid; gap:4px;">';
+                        data.tareas.forEach(tarea => {
+                            const statusColor = tarea.status === 'completado' ? '#22c55e' : 
+                                               tarea.status === 'error' ? '#ef4444' : '#fbbf24';
+                            const statusIcon = tarea.status === 'completado' ? '✅' : 
+                                              tarea.status === 'error' ? '❌' : '⏳';
+                            html += `
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:#1a1a1a; padding:8px 12px; border-radius:6px; border:1px solid #2a2a2a;">
+                                    <span style="font-family:monospace; font-size:12px; color:#60a5fa;">${tarea.id}</span>
+                                    <span style="color:${statusColor};">${statusIcon} ${tarea.status}</span>
+                                    <span style="color:#666; font-size:11px;">${new Date(tarea.timestamp).toLocaleTimeString()}</span>
+                                </div>
+                            `;
+                        });
+                        html += '</div>';
+                        container.innerHTML = html;
+                    } else {
+                        container.innerHTML = `
+                            <div style="color:#666; text-align:center; padding:12px;">
+                                No hay tareas activas.
+                            </div>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    container.innerHTML = `
+                        <div style="color:#ef4444; text-align:center; padding:12px;">
+                            ❌ Error al cargar tareas: ${err.message}
+                        </div>
+                    `;
+                });
+        }
+
+        function limpiarTareas() {
+            if (confirm('¿Estás seguro de que quieres limpiar todas las tareas?')) {
+                agregarLog('🗑️ Limpiando tareas...', 'info');
+                // Las tareas se limpian reiniciando el servidor o con un endpoint dedicado
+                // Por ahora, solo recargamos la lista
+                listarTareas();
+                agregarLog('✅ Tareas limpiadas', 'success');
+            }
+        }
+
+        function limpiarDatos() {
+            if (confirm('⚠️ ¿Estás seguro de que quieres limpiar todos los datos? Esta acción no se puede deshacer.')) {
+                if (confirm('¿Estás realmente seguro? Se eliminarán todos los dramas scrapeados.')) {
+                    agregarLog('🗑️ Limpiando todos los datos...', 'info');
+                    // Enviar petición para limpiar datos
+                    fetch(`${API_URL}/api/limpiar-datos`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            agregarLog('✅ Todos los datos han sido limpiados', 'success');
+                            cargarResultados();
+                            cargarStats();
+                        } else {
+                            agregarLog(`❌ Error al limpiar datos: ${data.error}`, 'error');
+                        }
+                    })
+                    .catch(err => {
+                        agregarLog(`❌ Error: ${err.message}`, 'error');
+                    });
+                }
+            }
+        }
+
+        function guardarFirebase() {
+            agregarLog('🔥 Guardando datos en Firebase...', 'info');
+            fetch(`${API_URL}/api/guardar-firebase`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ruta: 'dramas',
+                    datos: null
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    agregarLog(`✅ Datos guardados en Firebase: ${data.url}`, 'success');
+                } else {
+                    agregarLog(`❌ Error al guardar en Firebase: ${data.error}`, 'error');
+                }
+            })
+            .catch(err => {
+                agregarLog(`❌ Error: ${err.message}`, 'error');
+            });
+        }
+
+        function cargarFirebase() {
+            agregarLog('📥 Cargando datos desde Firebase...', 'info');
+            fetch(`${API_URL}/api/firebase`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        agregarLog(`✅ Datos cargados desde Firebase: ${data.data?.length || 0} dramas`, 'success');
+                        cargarResultados();
+                        cargarStats();
+                    } else {
+                        agregarLog(`❌ Error al cargar desde Firebase: ${data.error}`, 'error');
+                    }
+                })
+                .catch(err => {
+                    agregarLog(`❌ Error: ${err.message}`, 'error');
+                });
+        }
+
+        // ============ INICIO ============
+
+        document.addEventListener('DOMContentLoaded', function() {
+            agregarLog('🔧 Panel iniciado correctamente', 'info');
+            actualizarEstado();
+            cargarStats();
+            cargarResultados();
+            cargarProveedores();
+
+            // Actualizar cada 30 segundos
+            setInterval(actualizarEstado, 30000);
+            setInterval(() => {
+                cargarStats();
+                cargarResultados();
+            }, 10000);
+
+            // Listar tareas cada 15 segundos
+            setInterval(listarTareas, 15000);
+
+            // Enter en los inputs
+            const urlInput = document.getElementById('urlInput');
+            if (urlInput) {
+                urlInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') iniciarScrapingURL();
+                });
+            }
+            
+            const dramaUrlInput = document.getElementById('dramaUrlInput');
+            if (dramaUrlInput) {
+                dramaUrlInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') iniciarScrapingDrama();
+                });
+            }
+        });
+    </script>
+</body>
+</html>
