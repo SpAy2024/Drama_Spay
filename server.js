@@ -478,6 +478,83 @@ async function extraerDetallesDrama(browser, urlDrama, posterExistente = '') {
     }
 }
 
+
+// ============ EXTRACTOR PARA SUIKORA ============
+async function extraerDetallesSuikora(browser, urlDrama) {
+    const page = await browser.newPage();
+    
+    try {
+        console.log(`   🔍 Extrayendo detalles de Suikora: ${urlDrama}`);
+        // Usamos domcontentloaded porque es una SPA rápida
+        await page.goto(urlDrama, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        
+        // Esperar a que el grid de capítulos esté en el DOM
+        await page.waitForSelector('ol li a[href*="/drama/"]', { timeout: 15000 }).catch(() => {});
+
+        const detalles = await page.evaluate(() => {
+            const datos = {
+                titulo: '',
+                sinopsis: '',
+                totalEpisodios: 0,
+                episodios: [],
+                poster: '',
+                tags: []
+            };
+            
+            // Extraer Título
+            const titleEl = document.querySelector('h1');
+            if (titleEl) datos.titulo = titleEl.textContent.trim();
+            
+            // Extraer Póster (está en un set de imágenes)
+            const posterImg = document.querySelector('img[alt]');
+            if (posterImg) {
+                const src = posterImg.getAttribute('src');
+                if (src) datos.poster = src.startsWith('http') ? src : `https://suikora.com${src}`;
+            }
+            
+            // Extraer Sinopsis
+            const sinopsisEl = document.querySelector('p.max-w-\\[68ch\\]');
+            if (sinopsisEl) datos.sinopsis = sinopsisEl.textContent.trim();
+            
+            // Extraer Episodios (Los botones de los capítulos)
+            const links = document.querySelectorAll('ol li a');
+            for (const link of links) {
+                const href = link.getAttribute('href');
+                const texto = link.textContent.trim();
+                
+                if (href && href.includes('/drama/')) {
+                    const numero = parseInt(texto);
+                    if (!isNaN(numero)) {
+                        const urlCompleta = href.startsWith('http') ? href : `https://suikora.com${href}`;
+                        datos.episodios.push({
+                            numero: numero,
+                            titulo: `Capítulo ${numero}`,
+                            url: urlCompleta
+                        });
+                    }
+                }
+            }
+            
+            // Ordenar por si acaso
+            datos.episodios.sort((a, b) => a.numero - b.numero);
+            datos.totalEpisodios = datos.episodios.length;
+            
+            return datos;
+        });
+        
+        console.log(`   📺 ${detalles.episodios.length} capítulos encontrados en Suikora`);
+        return detalles;
+        
+    } catch (error) {
+        console.log(`   ❌ Error extrayendo de Suikora: ${error.message}`);
+        return { titulo: 'Error', sinopsis: '', totalEpisodios: 0, episodios: [], poster: '', tags: [] };
+    } finally {
+        await page.close();
+    }
+}
+
+
+
 // 3. Scrapear desde URL personalizada (COMPLETA)
 async function scrapearDesdeURL(urlPersonalizada) {
     console.log(`🚀 Scrapeando desde URL: ${urlPersonalizada}`);
@@ -952,31 +1029,43 @@ app.get('/api/scrapear-tareas', (req, res) => {
 app.post('/api/scrapear-drama', async (req, res) => {
     const { url } = req.body;
     
-   if (!url.includes('narto-drama.com/detail/watch/')) {
-    return res.status(400).json({ 
-        success: false, 
-        error: 'URL inválida. Debe ser una URL de detalle de drama.' 
-    });
-}
+    // Validar que sea de Narto o de Suikora
+    const esNarto = url.includes('narto-drama.com/detail/watch/');
+    const esSuikora = url.includes('suikora.com/es/drama/');
+    
+    if (!esNarto && !esSuikora) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'URL inválida. Debe ser de Narto Drama o Suikora.' 
+        });
+    }
 
     try {
         const browser = await crearBrowser();
-        
         agregarLog(`🎬 Scrapeando drama: ${url}`, 'info');
         
-        // ✅ Usar extraerDetallesDrama en lugar de extraerTodosLosEpisodios
-        const resultado = await extraerDetallesDrama(browser, url);
+        let resultado;
+        // 👇 AQUÍ ESTÁ LA MAGIA: Detecta de dónde viene y usa el extractor correcto
+        if (esSuikora) {
+            resultado = await extraerDetallesSuikora(browser, url);
+        } else {
+            resultado = await extraerDetallesDrama(browser, url);
+        }
+        
         await browser.close();
         
         if (resultado.episodios && resultado.episodios.length > 0) {
-            dramasData.push({
-                url: url,
-                ...resultado,
-                fechaScraping: new Date().toISOString()
-            });
+            // Evitar duplicados en dramasData
+            const existe = dramasData.find(d => d.url === url);
+            if (!existe) {
+                dramasData.push({
+                    url: url,
+                    ...resultado,
+                    fechaScraping: new Date().toISOString()
+                });
+            }
             
             await guardarDatosLocalmente(dramasData);
-            
             agregarLog(`✅ Drama procesado: ${resultado.titulo} - ${resultado.episodios.length} episodios`, 'success');
             
             res.json({
