@@ -932,10 +932,13 @@
                 return;
             }
             
-            if (!url.includes('edge.narto-drama.com/detail/watch/')) {
-                agregarLog('❌ URL inválida. Debe ser una URL de detalle de drama.', 'error');
-                return;
-            }
+           const esNarto = url.includes('narto-drama.com/detail/watch/');
+const esSuikora = url.includes('suikora.com/es/drama/');
+
+if (!esNarto && !esSuikora) {
+    agregarLog('❌ URL inválida. Debe ser de Narto Drama o Suikora.', 'error');
+    return;
+}
 
             btn.disabled = true;
             btn.textContent = '⏳ Scrapeando...';
