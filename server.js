@@ -485,10 +485,7 @@ async function extraerDetallesSuikora(browser, urlDrama) {
     
     try {
         console.log(`   🔍 Extrayendo detalles de Suikora: ${urlDrama}`);
-        // Usamos domcontentloaded porque es una SPA rápida
         await page.goto(urlDrama, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        
-        // Esperar a que el grid de capítulos esté en el DOM
         await page.waitForSelector('ol li a[href*="/drama/"]', { timeout: 15000 }).catch(() => {});
 
         const detalles = await page.evaluate(() => {
@@ -501,22 +498,25 @@ async function extraerDetallesSuikora(browser, urlDrama) {
                 tags: []
             };
             
-            // Extraer Título
+            // Título
             const titleEl = document.querySelector('h1');
             if (titleEl) datos.titulo = titleEl.textContent.trim();
             
-            // Extraer Póster (está en un set de imágenes)
-            const posterImg = document.querySelector('img[alt]');
+            // 👇 CORRECCIÓN DEL PÓSTER: Buscamos la imagen que tiene la clase específica
+            const posterImg = document.querySelector('img.object-cover') || document.querySelector('img[alt="' + datos.titulo + '"]');
             if (posterImg) {
                 const src = posterImg.getAttribute('src');
-                if (src) datos.poster = src.startsWith('http') ? src : `https://suikora.com${src}`;
+                if (src) {
+                    // Si la ruta empieza con /, le agregamos el dominio de Suikora
+                    datos.poster = src.startsWith('http') ? src : `https://suikora.com${src}`;
+                }
             }
             
-            // Extraer Sinopsis
+            // Sinopsis
             const sinopsisEl = document.querySelector('p.max-w-\\[68ch\\]');
             if (sinopsisEl) datos.sinopsis = sinopsisEl.textContent.trim();
             
-            // Extraer Episodios (Los botones de los capítulos)
+            // Episodios
             const links = document.querySelectorAll('ol li a');
             for (const link of links) {
                 const href = link.getAttribute('href');
@@ -535,7 +535,6 @@ async function extraerDetallesSuikora(browser, urlDrama) {
                 }
             }
             
-            // Ordenar por si acaso
             datos.episodios.sort((a, b) => a.numero - b.numero);
             datos.totalEpisodios = datos.episodios.length;
             
@@ -552,7 +551,6 @@ async function extraerDetallesSuikora(browser, urlDrama) {
         await page.close();
     }
 }
-
 
 
 // 3. Scrapear desde URL personalizada (COMPLETA)
