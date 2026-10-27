@@ -175,7 +175,7 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
         const existingUrls = new Set(existingData.map(item => item.url));
         
         for (const newItem of datos) {
-            if (!existingUrls.has(newItem.url)) {
+            if (newItem && newItem.url && !existingUrls.has(newItem.url)) {
                 combinedData.push(newItem);
                 existingUrls.add(newItem.url);
             }
@@ -189,7 +189,7 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
             url = `${url}?auth=${FIREBASE_SECRET}`;
         }
 
-        console.log(`📤 Guardando ${combinedData.length} dramas en Firebase: ${url}`);
+        console.log(`📤 Guardando ${combinedData.length} dramas en Firebase...`);
         
         const response = await fetch(url, {
             method: 'PUT',
@@ -205,13 +205,21 @@ async function guardarEnFirebase(datos, ruta = 'dramas') {
             throw new Error(`Error ${response.status}: ${errorText}`);
         }
 
-        console.log(`✅ Datos guardados en Firebase: ${combinedData.length} dramas`);
+        // 👇 PROTECCIÓN CONTRA EL ERROR 'reading url' 👇
+        const textResponse = await response.text();
+        let firebaseResponse = null;
+        try {
+            firebaseResponse = textResponse ? JSON.parse(textResponse) : null;
+        } catch (e) {}
+
+        console.log(`✅ Datos guardados en Firebase correctamente.`);
         return { 
             success: true, 
-            url: `${baseUrl}/${ruta}`,
+            url: `${baseUrl}/${ruta}`, // Si Firebase devuelve null, usamos esta URL por defecto
             total: combinedData.length,
             added: datos.length,
-            existing: existingData.length
+            existing: existingData.length,
+            firebaseResponse: firebaseResponse
         };
     } catch (error) {
         console.error('❌ Error al guardar en Firebase:', error.message);
